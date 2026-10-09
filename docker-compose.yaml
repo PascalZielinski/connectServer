@@ -1,0 +1,53 @@
+services:
+    web:
+        build:
+            context: .
+            dockerfile: dockerfile
+        working_dir: /var/www/html
+        command:
+            - sh
+            - -c
+            - >-
+                mkdir -p public/uploads/images &&
+                chgrp -R www-data public/uploads &&
+                chmod -R g+rwX public/uploads &&
+                find public/uploads -type d -exec chmod g+s {} + &&
+                exec apache2-foreground
+        volumes:
+            - .:/var/www/html
+            - ./php-uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
+        ports:
+            - "8080:80"
+        depends_on:
+            - db
+        environment:
+            APACHE_DOCUMENT_ROOT: /var/www/html/public
+            MAILER_FROM: ${MAILER_FROM:-noreply@example.com}
+            SMTP_USER: ${SMTP_USER:-}
+            SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
+
+    db:
+        image: mariadb:10.4.32
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: root
+            MYSQL_DATABASE: connectServer
+            MYSQL_USER: symfony
+            MYSQL_PASSWORD: symfony
+        ports:
+            - "3307:3306"
+        volumes:
+            - db_data:/var/lib/mysql
+
+    phpmyadmin:
+        image: arm64v8/phpmyadmin
+        restart: always
+        ports:
+            - "8081:80"
+        environment:
+            PMA_HOST: db
+            MYSQL_ROOT_PASSWORD: root
+            UPLOAD_LIMIT: 256M
+
+volumes:
+    db_data:
