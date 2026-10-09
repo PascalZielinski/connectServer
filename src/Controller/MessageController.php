@@ -53,6 +53,23 @@ final class MessageController extends AbstractController
         ));
     }
 
+    #[Route('/after/{id}', name: 'api_channel_messages_after_id', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function afterId(
+        string $channelUuid,
+        int $id,
+        ChannelRepository $channels,
+        MemberRepository $members,
+        MessageRepository $messages,
+    ): JsonResponse {
+        $channel = $this->findTextChannel($channelUuid, $channels);
+        $this->requireMembership($channel, $members);
+
+        return $this->json(array_map(
+            fn (Message $message): array => $this->messageData($message),
+            $messages->findAfterId($channel, $id),
+        ));
+    }
+
     #[Route('', name: 'api_channel_messages_create', methods: ['POST'])]
     public function create(
         string $channelUuid,
@@ -186,6 +203,7 @@ final class MessageController extends AbstractController
         $author = $message->getAuthor();
 
         return [
+            'id' => $message->getId(),
             'uuid' => $message->getUuid(),
             'content' => $message->getContent(),
             'created_at' => $message->getCreatedAt()->format(\DateTimeInterface::ATOM),
