@@ -85,6 +85,14 @@ Text-channel messages retain the author's user relation, UUID, content, and crea
 | `PATCH` | `/channels/{channelUuid}` | Owner or Editor | Update a channel by UUID; accepts `name` and/or `type`. |
 | `DELETE` | `/channels/{channelUuid}` | Owner or Editor | Delete a channel by UUID, including its message history. |
 
+### Voice channels
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| `POST` | `/voice/{channelUuid}/token` | Authenticated server member; voice channel | Issue a short-lived LiveKit token for the channel UUID (string, not database ID). Returns `{"token":"...","url":"ws://localhost:7880"}`. |
+
+Connect the frontend with the returned `url` and `token`; disconnect by calling `room.disconnect()` in the LiveKit client. Configure `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and the browser-reachable `LIVEKIT_URL` in the environment. For production, use the secure WebSocket URL for the LiveKit deployment.
+
 ### Text-channel messages
 
 | Method | Path | Access | Description |

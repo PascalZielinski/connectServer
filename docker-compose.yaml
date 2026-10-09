@@ -49,5 +49,20 @@ services:
             MYSQL_ROOT_PASSWORD: root
             UPLOAD_LIMIT: 256M
 
+    livekit:
+        image: livekit/livekit-server:latest
+        network_mode: host
+        restart: unless-stopped
+        environment:
+            LIVEKIT_CONFIG: |
+                port: 7880
+                rtc:
+                  tcp_port: 7881
+                  port_range_start: 50000
+                  port_range_end: 50200
+                  use_external_ip: true
+                keys:
+                    ${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in .env}: ${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in .env}
+
 volumes:
     db_data:
