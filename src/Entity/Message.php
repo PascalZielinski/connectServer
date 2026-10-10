@@ -29,15 +29,17 @@ class Message
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     private ?User $author = null;
 
-    #[ORM\Column(type: 'text')]
-    #[Assert\NotBlank]
+    #[ORM\Column(type: 'text', nullable: true)]
     #[Assert\Length(max: 4000)]
-    private string $content;
+    private ?string $content;
+
+    #[ORM\Column(length: 36, nullable: true)]
+    private ?string $attachmentUuid = null;
 
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
 
-    public function __construct(Channel $channel, User $author, string $content)
+    public function __construct(Channel $channel, User $author, ?string $content)
     {
         $uuidBytes = random_bytes(16);
         $uuidBytes[6] = chr((ord($uuidBytes[6]) & 0x0f) | 0x40);
@@ -54,7 +56,7 @@ class Message
         $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $this->channel = $channel;
         $this->author = $author;
-        $this->content = trim($content);
+        $this->content = $content === null ? null : trim($content);
         $channel->addMessage($this);
     }
 
@@ -88,7 +90,7 @@ class Message
         return $this->author;
     }
 
-    public function getContent(): string
+    public function getContent(): ?string
     {
         return $this->content;
     }
@@ -96,6 +98,18 @@ class Message
     public function setContent(string $content): self
     {
         $this->content = trim($content);
+
+        return $this;
+    }
+
+    public function getAttachmentUuid(): ?string
+    {
+        return $this->attachmentUuid;
+    }
+
+    public function setAttachmentUuid(?string $attachmentUuid): self
+    {
+        $this->attachmentUuid = $attachmentUuid;
 
         return $this;
     }

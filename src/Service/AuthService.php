@@ -9,6 +9,7 @@ use Gesdinet\JWTRefreshTokenBundle\Generator\RefreshTokenGeneratorInterface;
 use Gesdinet\JWTRefreshTokenBundle\Model\RefreshTokenManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -27,6 +28,46 @@ final readonly class AuthService
         #[Autowire('%gesdinet_jwt_refresh_token.ttl%')]
         private int $refreshTokenTtl,
     ) {
+    }
+
+    public function registerRequest(array $data): OperationResult
+    {
+        if (
+            !isset($data['email'], $data['password'], $data['password_confirm'])
+            || !is_string($data['email'])
+            || !is_string($data['password'])
+            || !is_string($data['password_confirm'])
+        ) {
+            return new OperationResult(
+                ['error' => 'Email, password, and password_confirm are required as strings.'],
+                400,
+            );
+        }
+
+        return new OperationResult($this->register($data['email'], $data['password'], $data['password_confirm']), 201);
+    }
+
+    public function loginRequest(array $data): OperationResult
+    {
+        if (!isset($data['email'], $data['password']) || !is_string($data['email']) || !is_string($data['password'])) {
+            return new OperationResult(['error' => 'Email and password are required.'], 400);
+        }
+
+        return new OperationResult($this->login($data['email'], $data['password']));
+    }
+
+    public function currentUser(mixed $user): OperationResult
+    {
+        if (!$user instanceof User) {
+            throw new AccessDeniedHttpException();
+        }
+
+        return new OperationResult([
+            'id' => $user->getId(),
+            'uuid' => $user->getUuid(),
+            'email' => $user->getEmail(),
+            'created_at' => $user->getCreatedAt()->format(\DateTimeInterface::ATOM),
+        ]);
     }
 
     public function register(string $email, string $password, string $passwordConfirm): array

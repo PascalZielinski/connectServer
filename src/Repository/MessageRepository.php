@@ -42,6 +42,11 @@ class MessageRepository extends ServiceEntityRepository
         return $this->findOneBy(['uuid' => $uuid, 'channel' => $channel]);
     }
 
+    public function findByAttachmentUuidAndChannel(string $attachmentUuid, Channel $channel): ?Message
+    {
+        return $this->findOneBy(['attachmentUuid' => $attachmentUuid, 'channel' => $channel]);
+    }
+
     public function findLatestId(Channel $channel): int
     {
         return (int) $this->createQueryBuilder('message')

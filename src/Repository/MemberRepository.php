@@ -24,6 +24,20 @@ class MemberRepository extends ServiceEntityRepository
         return $this->findOneBy(['server' => $server, 'user' => $user]);
     }
 
+    public function findByServerAndUserUuid(Server $server, string $userUuid): ?Member
+    {
+        $member = $this->createQueryBuilder('member')
+            ->join('member.user', 'user')
+            ->andWhere('member.server = :server')
+            ->andWhere('user.uuid = :userUuid')
+            ->setParameter('server', $server)
+            ->setParameter('userUuid', $userUuid)
+            ->getQuery()
+            ->getOneOrNullResult();
+
+        return $member instanceof Member ? $member : null;
+    }
+
     public function findByUser(User $user): array
     {
         return $this->findBy(['user' => $user], ['joinedAt' => 'DESC']);
