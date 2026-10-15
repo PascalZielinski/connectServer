@@ -5,8 +5,11 @@ namespace App\Controller;
 use App\Service\OperationResult;
 use App\Service\ServerService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/api')]
@@ -46,6 +49,31 @@ final class ServerController extends AbstractController
     public function update(string $uuid, Request $request, ServerService $servers): JsonResponse
     {
         return $this->response($servers->updateSettings($uuid, $request->toArray()));
+    }
+
+    #[Route('/servers/{uuid}/image', name: 'api_servers_image_update', methods: ['POST', 'PATCH'])]
+    public function updateImage(string $uuid, Request $request, ServerService $servers): JsonResponse
+    {
+        return $this->response($servers->updateImage($uuid, $request->files->get('image')));
+    }
+
+    #[Route('/servers/{uuid}/image', name: 'api_servers_image_show', methods: ['GET'])]
+    public function showImage(string $uuid, ServerService $servers): Response
+    {
+        $path = $servers->getImagePath($uuid);
+
+        if ($path === null) {
+            return $this->response(new OperationResult(['error' => 'No server image.'], 404));
+        }
+
+        $response = new BinaryFileResponse($path);
+        $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE);
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+        $response->setPrivate();
+        $response->setMaxAge(0);
+        $response->headers->addCacheControlDirective('must-revalidate');
+
+        return $response;
     }
 
     #[Route('/servers/{uuid}', name: 'api_servers_delete', methods: ['DELETE'])]

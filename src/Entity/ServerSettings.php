@@ -41,6 +41,9 @@ class ServerSettings
     #[ORM\OneToMany(mappedBy: 'serverSettings', targetEntity: Channel::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $channels;
 
+    #[ORM\OneToOne(mappedBy: 'server', cascade: ['persist', 'remove'])]
+    private ?ServerImage $serverImage = null;
+
     public function __construct()
     {
         $this->channels = new ArrayCollection();
@@ -137,6 +140,28 @@ class ServerSettings
         if ($this->channels->removeElement($channel) && $channel->getServerSettings() === $this) {
             $channel->setServerSettings(null);
         }
+
+        return $this;
+    }
+
+    public function getServerImage(): ?ServerImage
+    {
+        return $this->serverImage;
+    }
+
+    public function setServerImage(?ServerImage $serverImage): static
+    {
+        // unset the owning side of the relation if necessary
+        if ($serverImage === null && $this->serverImage !== null) {
+            $this->serverImage->setServer(null);
+        }
+
+        // set the owning side of the relation if necessary
+        if ($serverImage !== null && $serverImage->getServer() !== $this) {
+            $serverImage->setServer($this);
+        }
+
+        $this->serverImage = $serverImage;
 
         return $this;
     }

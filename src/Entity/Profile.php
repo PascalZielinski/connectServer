@@ -19,13 +19,16 @@ class Profile
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     private ?User $user = null;
 
-    #[ORM\Column(length: 120, nullable: true)]
+    #[ORM\Column(length: 120, nullable: true, unique: true)]
     #[Assert\Length(max: 120)]
     private ?string $displayName = null;
 
     #[ORM\Column(length: 2000, nullable: true)]
     #[Assert\Length(max: 2000)]
     private ?string $bio = null;
+
+    #[ORM\OneToOne(mappedBy: 'profile', cascade: ['persist', 'remove'])]
+    private ?ProfileImage $profileImage = null;
 
     public function getId(): ?int
     {
@@ -68,6 +71,28 @@ class Profile
     public function setBio(?string $bio): self
     {
         $this->bio = $bio;
+
+        return $this;
+    }
+
+    public function getProfileImage(): ?ProfileImage
+    {
+        return $this->profileImage;
+    }
+
+    public function setProfileImage(?ProfileImage $profileImage): static
+    {
+        // unset the owning side of the relation if necessary
+        if ($profileImage === null && $this->profileImage !== null) {
+            $this->profileImage->setProfile(null);
+        }
+
+        // set the owning side of the relation if necessary
+        if ($profileImage !== null && $profileImage->getProfile() !== $this) {
+            $profileImage->setProfile($this);
+        }
+
+        $this->profileImage = $profileImage;
 
         return $this;
     }

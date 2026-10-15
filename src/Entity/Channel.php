@@ -19,7 +19,7 @@ class Channel
     #[ORM\Column]
     private ?int $id = null;
 
-    #[ORM\Column(length: 36)]
+    #[ORM\Column(length: 36, unique: true)]
     private string $uuid;
 
     #[ORM\ManyToOne(targetEntity: ServerSettings::class, inversedBy: 'channels')]

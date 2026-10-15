@@ -18,7 +18,7 @@ class Message
     #[ORM\Column]
     private ?int $id = null;
 
-    #[ORM\Column(length: 36)]
+    #[ORM\Column(length: 36, unique: true)]
     private string $uuid;
 
     #[ORM\ManyToOne(targetEntity: Channel::class, inversedBy: 'messages')]
@@ -33,7 +33,7 @@ class Message
     #[Assert\Length(max: 4000)]
     private ?string $content;
 
-    #[ORM\Column(length: 36, nullable: true)]
+    #[ORM\Column(length: 36, nullable: true, unique: true)]
     private ?string $attachmentUuid = null;
 
     #[ORM\Column]

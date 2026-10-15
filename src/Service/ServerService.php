@@ -3,7 +3,9 @@
 namespace App\Service;
 
 use App\Entity\Member;
+use App\Entity\Profile;
 use App\Entity\Server;
+use App\Entity\ServerImage;
 use App\Entity\ServerSettings;
 use App\Entity\User;
 use App\Enum\MemberRole;
@@ -13,14 +15,24 @@ use App\Repository\UserRepository;
 use App\Security\ServerVoter;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 final readonly class ServerService
 {
+    private const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+    private const MAX_DIMENSION = 8000;        // Schutz vor Decompression-Bombs
+    private const ALLOWED = [
+        'image/jpeg' => ['ext' => 'jpg', 'magic' => "\xFF\xD8\xFF"],
+        'image/png'  => ['ext' => 'png', 'magic' => "\x89PNG\r\n\x1A\n"],
+    ];
+
     private const MAX_SERVERS_PER_OWNER = 10;
 
     public function __construct(
@@ -29,6 +41,8 @@ final readonly class ServerService
         private MemberRepository $members,
         private UserRepository $users,
         private ValidatorInterface $validator,
+        #[Autowire('%kernel.project_dir%/var/uploads')]
+        private string $uploadDir,
         private AuthorizationCheckerInterface $authorization,
     ) {
     }
@@ -250,6 +264,123 @@ final readonly class ServerService
         return new OperationResult(null, 204);
     }
 
+    public function updateImage(string $uuid, ?UploadedFile $image): OperationResult
+    {
+        $server = $this->findServer($uuid);
+        $this->requireAuthorization(ServerVoter::MANAGE, $server);
+
+        $settings = $server->getSettings();
+        if ($settings === null) {
+            throw new \LogicException('Server settings are missing.');
+        }
+
+        if ($image === null) {
+            return new OperationResult(['error' => 'No image file provided.'], 400);
+        }
+
+        // isValid() prüft Upload-Fehler und is_uploaded_file()
+        if (!$image->isValid()) {
+            return new OperationResult(['error' => 'Invalid image file.'], 400);
+        }
+
+        if ($image->getSize() === false || $image->getSize() > self::MAX_SIZE) {
+            return new OperationResult(['error' => 'File too large (max 10 MB).'], 413);
+        }
+
+        $path = $image->getPathname();
+
+        // 1. MIME anhand des Inhalts (nicht vom Client-Header)
+        $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($path);
+        if (!isset(self::ALLOWED[$mime])) {
+            return new OperationResult(['error' => 'Only PNG and JPEG allowed.'], 415);
+        }
+
+        // 2. Magic Bytes
+        $handle = fopen($path, 'rb');
+        $head = $handle ? fread($handle, 8) : '';
+        if ($handle) {
+            fclose($handle);
+        }
+        if (!str_starts_with($head, self::ALLOWED[$mime]['magic'])) {
+            return new OperationResult(['error' => 'File signature mismatch.'], 415);
+        }
+
+        // 3. Ist es wirklich ein parsebares Bild + Größenlimit
+        $info = @getimagesize($path);
+        if ($info === false || $info['mime'] !== $mime
+            || $info[0] > self::MAX_DIMENSION || $info[1] > self::MAX_DIMENSION) {
+            return new OperationResult(['error' => 'Invalid or too large image.'], 400);
+        }
+
+        // 4. Sanitizing: neu encoden -> EXIF, eingebetteter Müll, Polyglots sind weg
+        $img = $mime === 'image/jpeg' ? @imagecreatefromjpeg($path) : @imagecreatefrompng($path);
+        if ($img === false) {
+            return new OperationResult(['error' => 'Could not process image.'], 400);
+        }
+
+        if (!is_dir($this->uploadDir) && !mkdir($this->uploadDir, 0750, true) && !is_dir($this->uploadDir)) {
+            return new OperationResult(['error' => 'Storage unavailable.'], 500);
+        }
+
+        $old = $settings->getServerImage();
+        $oldName = $old?->getName();
+
+        $filename = bin2hex(random_bytes(16)) . '.' . self::ALLOWED[$mime]['ext']; // nie den Client-Namen nehmen
+        $target = $this->uploadDir . '/' . $filename;
+
+        if ($mime === 'image/jpeg') {
+            $ok = imagejpeg($img, $target, 90);
+        } else {
+            imagealphablending($img, false);
+            imagesavealpha($img, true);
+            $ok = imagepng($img, $target, 6);
+        }
+
+        if (!$ok) {
+            return new OperationResult(['error' => 'Could not save image.'], 500);
+        }
+
+        // Bestehende Entity wiederverwenden, nur bei Erstupload neu anlegen
+        $serverImage = $old ?? new ServerImage();
+        $serverImage->setName($filename);
+        if ($serverImage->getUuid() === null) {
+            $serverImage->setUuid(Uuid::v4());
+        }
+        if ($old === null) {
+            $settings->setServerImage($serverImage);
+            $this->entityManager->persist($serverImage);
+        }
+
+        try {
+            $this->entityManager->flush();
+        } catch (\Throwable $e) {
+            @unlink($target); // neue Datei wieder wegräumen, alte bleibt unangetastet
+            throw $e;
+        }
+
+        // Alte Datei erst nach erfolgreichem Flush löschen
+        if ($oldName !== null) {
+            @unlink($this->uploadDir . '/' . basename($oldName));
+        }
+
+        return new OperationResult($this->serverData($server));
+    }
+
+    public function getImagePath(string $uuid): ?string
+    {
+        $server = $this->findServer($uuid);
+        $this->requireAuthorization(ServerVoter::VIEW, $server);
+
+        $image = $server->getSettings()?->getServerImage();
+        if ($image === null || $image->getName() === null) {
+            return null;
+        }
+
+        $path = $this->uploadDir . '/' . basename($image->getName());
+
+        return is_file($path) ? $path : null;
+    }
+
     private function findServer(string $uuid): Server
     {
         $server = $this->servers->findOneBy(['uuid' => $uuid]);
@@ -346,10 +477,14 @@ final readonly class ServerService
 
     private function memberData(Member $member): array
     {
+        $user = $member->getUser();
+        $profile = $user?->getProfile();
+
         return [
-            'user_uuid' => $member->getUser()?->getUuid(),
+            'user_uuid' => $user->getUuid(),
             'role' => $member->getRole()->value,
             'joined_at' => $member->getJoinedAt()->format(\DateTimeInterface::ATOM),
+            'display_name' => $profile->getDisplayName(),
         ];
     }
 }

@@ -17,7 +17,7 @@ class StoredUpload
     #[ORM\Column]
     private ?int $id = null;
 
-    #[ORM\Column(length: 36)]
+    #[ORM\Column(length: 36, unique: true)]
     private string $uuid;
 
     #[ORM\Column]
