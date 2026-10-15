@@ -484,7 +484,7 @@ final readonly class ServerService
             'user_uuid' => $user->getUuid(),
             'role' => $member->getRole()->value,
             'joined_at' => $member->getJoinedAt()->format(\DateTimeInterface::ATOM),
-            'display_name' => $profile->getDisplayName(),
+            'display_name' => $profile->getDisplayName() ?? $user->getEmail(),
         ];
     }
 }
