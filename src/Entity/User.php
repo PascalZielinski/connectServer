@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\UserRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -43,6 +45,12 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToOne(mappedBy: 'user', targetEntity: Profile::class, cascade: ['persist', 'remove'])]
     private ?Profile $profile = null;
 
+    /**
+     * @var Collection<int, UserPublicKey>
+     */
+    #[ORM\OneToMany(targetEntity: UserPublicKey::class, mappedBy: 'User', orphanRemoval: true)]
+    private Collection $userPublicKeys;
+
     public function __construct()
     {
         $this->uuid = Uuid::v4();
@@ -51,6 +59,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
         $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $this->roles = ['ROLE_USER'];
+        $this->userPublicKeys = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -138,6 +147,36 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setPasswordHash(string $passwordHash): self
     {
         $this->password = $passwordHash;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, UserPublicKey>
+     */
+    public function getUserPublicKeys(): Collection
+    {
+        return $this->userPublicKeys;
+    }
+
+    public function addUserPublicKey(UserPublicKey $userPublicKey): static
+    {
+        if (!$this->userPublicKeys->contains($userPublicKey)) {
+            $this->userPublicKeys->add($userPublicKey);
+            $userPublicKey->setUser($this);
+        }
+
+        return $this;
+    }
+
+    public function removeUserPublicKey(UserPublicKey $userPublicKey): static
+    {
+        if ($this->userPublicKeys->removeElement($userPublicKey)) {
+            // set the owning side to null (unless already changed)
+            if ($userPublicKey->getUser() === $this) {
+                $userPublicKey->setUser(null);
+            }
+        }
 
         return $this;
     }

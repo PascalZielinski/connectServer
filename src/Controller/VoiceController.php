@@ -2,10 +2,12 @@
 
 namespace App\Controller;
 
+use App\Repository\ServerRepository;
 use App\Service\OperationResult;
 use App\Service\VoiceService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/api/voice')]
@@ -17,5 +19,16 @@ final class VoiceController extends AbstractController
         $result = $voice->createToken($channelUuid, $this->getUser());
 
         return $this->json($result->data, $result->statusCode);
+    }
+
+    #[Route('/servers/{uuid}/voice-state', methods: ['GET'])]
+    public function voiceState(string $uuid, ServerRepository $servers, VoiceService $voice): JsonResponse
+    {
+        $server = $servers->findOneBy(['uuid' => $uuid]);
+        if ($server === null) {
+            throw new NotFoundHttpException('Server not found.');
+        }
+
+        return $this->json($voice->getVoiceState($server, $this->getUser()));
     }
 }
