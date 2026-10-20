@@ -99,6 +99,19 @@
             "config/packages/lexik_jwt_authentication.yaml"
         ]
     },
+    "nelmio/api-doc-bundle": {
+        "version": "5.13",
+        "recipe": {
+            "repo": "github.com/symfony/recipes-contrib",
+            "branch": "main",
+            "version": "3.0",
+            "ref": "c8e0c38e1a280ab9e37587a8fa32b251d5bc1c94"
+        },
+        "files": [
+            "config/packages/nelmio_api_doc.yaml",
+            "config/routes/nelmio_api_doc.yaml"
+        ]
+    },
     "nelmio/cors-bundle": {
         "version": "2.6",
         "recipe": {
@@ -191,6 +204,18 @@
             "version": "1.0",
             "ref": "fadbfe33303a76e25cb63401050439aa9b1a9c7f"
         }
+    },
+    "symfony/mercure-bundle": {
+        "version": "0.6",
+        "recipe": {
+            "repo": "github.com/symfony/recipes",
+            "branch": "main",
+            "version": "0.6",
+            "ref": "4b113d4f04479ba9db846f27296c91a0264083f4"
+        },
+        "files": [
+            "config/packages/mercure.yaml"
+        ]
     },
     "symfony/property-info": {
         "version": "7.4",

@@ -1548,7 +1548,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         },
  *     },
  *     mercure?: bool|array{
- *         enabled?: bool|Param, // Default: false
+ *         enabled?: bool|Param, // Default: true
  *         hub_url?: scalar|Param|null, // The URL sent in the Link HTTP header. If not set, will default to the URL for MercureBundle's default hub. // Default: null
  *         include_type?: bool|Param, // Always include @type in updates (including delete ones). // Default: false
  *     },
@@ -1733,6 +1733,104 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     enable_static_query_cache?: bool|Param, // Default: true
  *     connection_keys?: list<mixed>,
  * }
+ * @psalm-type NelmioApiDocConfig = array{
+ *     type_info?: bool|Param, // Use the symfony/type-info component for determining types. // Default: true
+ *     use_validation_groups?: bool|Param, // If true, `groups` passed to #[Model] attributes will be used to limit validation constraints // Default: false
+ *     operation_id_generation?: \Nelmio\ApiDocBundle\Describer\OperationIdGeneration::ALWAYS_PREPEND|\Nelmio\ApiDocBundle\Describer\OperationIdGeneration::CONDITIONALLY_PREPEND|\Nelmio\ApiDocBundle\Describer\OperationIdGeneration::NO_PREPEND|"always_prepend"|"conditionally_prepend"|"no_prepend"|Param, // How to generate operation ids // Default: "always_prepend"
+ *     cache?: array{
+ *         pool?: scalar|Param|null, // define cache pool to use // Default: null
+ *         item_id?: scalar|Param|null, // define cache item id // Default: null
+ *     },
+ *     documentation?: array<string, mixed>,
+ *     media_types?: list<scalar|Param|null>,
+ *     html_config?: array{ // UI configuration options
+ *         assets_mode?: scalar|Param|null, // Default: "cdn"
+ *         swagger_ui_config?: array<mixed>,
+ *         redocly_config?: array<mixed>,
+ *         scalar_config?: array<mixed>,
+ *         stoplight_config?: array<mixed>,
+ *     },
+ *     areas?: array<string, array{ // Default: {"default":{"path_patterns":[],"host_patterns":[],"with_attribute":false,"documentation":[],"name_patterns":[],"disable_default_routes":false,"cache":[],"security":[]}}
+ *         path_patterns?: list<scalar|Param|null>,
+ *         host_patterns?: list<scalar|Param|null>,
+ *         name_patterns?: list<scalar|Param|null>,
+ *         security?: array<string, array{ // Default: []
+ *             type?: scalar|Param|null,
+ *             scheme?: scalar|Param|null,
+ *             in?: scalar|Param|null,
+ *             name?: scalar|Param|null,
+ *             description?: scalar|Param|null,
+ *             openIdConnectUrl?: scalar|Param|null,
+ *             ...<string, mixed>
+ *         }>,
+ *         with_attribute?: bool|Param, // whether to filter by attributes // Default: false
+ *         disable_default_routes?: bool|Param, // if set disables default routes without attributes // Default: false
+ *         documentation?: array<string, mixed>,
+ *         cache?: array{
+ *             pool?: scalar|Param|null, // define cache pool to use // Default: null
+ *             item_id?: scalar|Param|null, // define cache item id // Default: null
+ *         },
+ *     }>,
+ *     models?: array{
+ *         use_jms?: bool|Param, // Default: false
+ *         names?: list<array{ // Default: []
+ *             alias?: scalar|Param|null,
+ *             type?: scalar|Param|null,
+ *             groups?: mixed, // Default: null
+ *             options?: mixed, // Default: null
+ *             serializationContext?: list<mixed>,
+ *             areas?: list<scalar|Param|null>,
+ *         }>,
+ *     },
+ * }
+ * @psalm-type MercureConfig = array{
+ *     hubs?: array<string, array{ // Default: []
+ *         url?: scalar|Param|null, // URL of the hub's publish endpoint. Leave empty to publish through FrankenPHP's built-in Mercure hub. // Default: null
+ *         public_url?: scalar|Param|null, // URL of the hub's public endpoint // Default: null
+ *         publisher?: array{ // Configuration of the JSON Web Token used to publish to this hub. Use with "subscriber" to sign publisher and subscriber tokens with different keys.
+ *             value?: scalar|Param|null, // JSON Web Token to use to publish to this hub.
+ *             provider?: scalar|Param|null, // The ID of a service implementing TokenProviderInterface.
+ *             factory?: scalar|Param|null, // The ID of a service implementing TokenFactoryInterface, used to create the JSON Web Token.
+ *             topics?: list<scalar|Param|null>,
+ *             secret?: scalar|Param|null, // The JWT Secret to use.
+ *             passphrase?: scalar|Param|null, // The JWT secret passphrase. // Default: ""
+ *             algorithm?: scalar|Param|null, // The algorithm to use to sign the JWT. With "secret", one of LcobucciFactory::SIGN_ALGORITHMS ("hmac.sha256", the default). With "jwks_uri", a JWA name from WebTokenFactory::SIGN_ALGORITHMS ("HS256", the default).
+ *             jwks_uri?: scalar|Param|null, // URL of a JSON Web Key Set (JWKS) to fetch the signing key from, instead of "secret". Requires "protocol_version: 1.0" and "web-token/jwt-library".
+ *             key_id?: scalar|Param|null, // The "kid" of the key to select from "jwks_uri", required when the key set holds more than one matching key.
+ *             claims?: array<string, mixed>,
+ *         },
+ *         subscriber?: array{ // Configuration of the JSON Web Tokens created for subscribers (e.g. the authorization cookie).
+ *             factory?: scalar|Param|null, // The ID of a service implementing TokenFactoryInterface, used to create the JSON Web Tokens.
+ *             secret?: scalar|Param|null, // The JWT Secret to use.
+ *             passphrase?: scalar|Param|null, // The JWT secret passphrase. // Default: ""
+ *             algorithm?: scalar|Param|null, // The algorithm to use to sign the JWT. With "secret", one of LcobucciFactory::SIGN_ALGORITHMS ("hmac.sha256", the default). With "jwks_uri", a JWA name from WebTokenFactory::SIGN_ALGORITHMS ("HS256", the default).
+ *             jwks_uri?: scalar|Param|null, // URL of a JSON Web Key Set (JWKS) to fetch the signing key from, instead of "secret". Requires "protocol_version: 1.0" and "web-token/jwt-library".
+ *             key_id?: scalar|Param|null, // The "kid" of the key to select from "jwks_uri", required when the key set holds more than one matching key.
+ *             claims?: array<string, mixed>,
+ *         },
+ *         jwt?: Param|string|array{ // JSON Web Token configuration.
+ *             value?: scalar|Param|null, // JSON Web Token to use to publish to this hub.
+ *             provider?: scalar|Param|null, // The ID of a service to call to provide the JSON Web Token.
+ *             factory?: scalar|Param|null, // The ID of a service to call to create the JSON Web Token.
+ *             publish?: list<scalar|Param|null>,
+ *             subscribe?: list<scalar|Param|null>,
+ *             secret?: scalar|Param|null, // The JWT Secret to use.
+ *             passphrase?: scalar|Param|null, // The JWT secret passphrase. // Default: ""
+ *             algorithm?: scalar|Param|null, // The algorithm to use to sign the JWT. With "secret", one of LcobucciFactory::SIGN_ALGORITHMS ("hmac.sha256", the default). With "jwks_uri", a JWA name from WebTokenFactory::SIGN_ALGORITHMS ("HS256", the default).
+ *             jwks_uri?: scalar|Param|null, // URL of a JSON Web Key Set (JWKS) to fetch the signing key from, instead of "secret". Requires "protocol_version: 1.0" and "web-token/jwt-library".
+ *             key_id?: scalar|Param|null, // The "kid" of the key to select from "jwks_uri", required when the key set holds more than one matching key.
+ *             claims?: array<string, mixed>,
+ *         },
+ *         jwt_provider?: scalar|Param|null, // Deprecated: The child node "jwt_provider" at path "mercure.hubs..jwt_provider" is deprecated, use "jwt.provider" instead. // The ID of a service to call to generate the JSON Web Token.
+ *         bus?: scalar|Param|null, // Name of the Messenger bus where the handler for this hub must be registered. Default to the default bus if Messenger is enabled.
+ *         http_client?: scalar|Param|null, // The ID of the HTTP client service to publish to this hub with, e.g. a scoped client with a short timeout. Defaults to "http_client".
+ *         protocol_version?: value-of<\Symfony\Component\Mercure\ProtocolVersion>|\Symfony\Component\Mercure\ProtocolVersion|Param, // The Mercure protocol version spoken by this hub: "1.0" (default) or "0.x". Affects the default cookie name, the JWT claim shape built by "jwt.secret", and how the mercure() Twig function interprets matcher-typed topics. // Default: "1.0"
+ *         cookie_name?: scalar|Param|null, // Name of the subscriber authorization cookie. Defaults to a value computed from "protocol_version" when not set: "__Secure-mercure_access_token" for "1.0" ("mercure_access_token" in debug mode, matching the hub's "playground" mode), "mercureAuthorization" for "0.x". // Default: null
+ *     }>,
+ *     default_hub?: scalar|Param|null,
+ *     default_cookie_lifetime?: int|Param, // Default lifetime of the cookie containing the JWT, in seconds. Defaults to the value of "framework.session.cookie_lifetime". // Default: null
+ *     enable_profiler?: bool|Param, // Deprecated: The child node "enable_profiler" at path "mercure.enable_profiler" is deprecated. // Enable Symfony Web Profiler integration.
+ * }
  * @psalm-type ConfigType = array{
  *     imports?: ImportsConfig,
  *     parameters?: ParametersConfig,
@@ -1745,6 +1843,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     gesdinet_jwt_refresh_token?: GesdinetJwtRefreshTokenConfig,
  *     nelmio_cors?: NelmioCorsConfig,
  *     api_platform?: ApiPlatformConfig,
+ *     nelmio_api_doc?: NelmioApiDocConfig,
+ *     mercure?: MercureConfig,
  *     "when@dev"?: array{
  *         imports?: ImportsConfig,
  *         parameters?: ParametersConfig,
@@ -1758,6 +1858,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         gesdinet_jwt_refresh_token?: GesdinetJwtRefreshTokenConfig,
  *         nelmio_cors?: NelmioCorsConfig,
  *         api_platform?: ApiPlatformConfig,
+ *         nelmio_api_doc?: NelmioApiDocConfig,
+ *         mercure?: MercureConfig,
  *     },
  *     "when@prod"?: array{
  *         imports?: ImportsConfig,
@@ -1771,6 +1873,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         gesdinet_jwt_refresh_token?: GesdinetJwtRefreshTokenConfig,
  *         nelmio_cors?: NelmioCorsConfig,
  *         api_platform?: ApiPlatformConfig,
+ *         nelmio_api_doc?: NelmioApiDocConfig,
+ *         mercure?: MercureConfig,
  *     },
  *     "when@test"?: array{
  *         imports?: ImportsConfig,
@@ -1785,6 +1889,8 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         nelmio_cors?: NelmioCorsConfig,
  *         api_platform?: ApiPlatformConfig,
  *         dama_doctrine_test?: DamaDoctrineTestConfig,
+ *         nelmio_api_doc?: NelmioApiDocConfig,
+ *         mercure?: MercureConfig,
  *     },
  *     ...<string, ExtensionType|array{ // extra keys must follow the when@%env% pattern or match an extension alias
  *         imports?: ImportsConfig,

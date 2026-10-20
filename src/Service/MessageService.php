@@ -15,6 +15,9 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Mercure\HubInterface;
+use Symfony\Component\Mercure\Update;
 
 final readonly class MessageService
 {
@@ -26,6 +29,8 @@ final readonly class MessageService
         private ValidatorInterface $validator,
         private UploadService $uploads,
         private StoredUploadRepository $storedUploads,
+        private HubInterface $hub,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -107,6 +112,8 @@ final readonly class MessageService
             throw $exception;
         }
 
+        $this->publish($channel, 'created', ['message' => $this->messageData($message)]);
+
         return new OperationResult($this->messageData($message), 201);
     }
 
@@ -138,6 +145,8 @@ final readonly class MessageService
 
         $this->entityManager->flush();
 
+        $this->publish($channel, 'updated', ['message' => $this->messageData($message)]);
+
         return new OperationResult($this->messageData($message));
     }
 
@@ -151,8 +160,11 @@ final readonly class MessageService
         }
         $this->assertAuthor($message, $author, 'delete');
 
+        $deletedUuid = $message->getUuid();
         $this->entityManager->remove($message);
         $this->entityManager->flush();
+
+        $this->publish($channel, 'deleted', ['message' => ['uuid' => $deletedUuid]]);
 
         return new OperationResult(null, 204);
     }
@@ -252,5 +264,38 @@ final readonly class MessageService
                 $attachmentUuid,
             ),
         ];
+    }
+
+    private function publish(Channel $channel, string $type, array $payload): void
+    {
+        try {
+            $this->hub->publish(new Update(
+                self::topic($channel),
+                json_encode(
+                    ['type' => $type, 'channel' => $channel->getUuid()] + $payload,
+                    JSON_THROW_ON_ERROR,
+                ),
+                private: true,
+            ));
+        } catch (\Throwable $exception) {
+            $this->logger->error('Mercure publish failed.', [
+                'type' => $type,
+                'channel' => $channel->getUuid(),
+                'exception' => $exception,
+            ]);
+        }
+    }
+
+    public static function topic(Channel $channel): string
+    {
+        return sprintf('channels/%s/messages', $channel->getUuid());
+    }
+
+    public function subscriptionTopic(string $channelUuid, mixed $user): string
+    {
+        $channel = $this->findTextChannel($channelUuid);
+        $this->requireMembership($channel, $user);
+
+        return self::topic($channel);
     }
 }
