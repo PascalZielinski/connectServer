@@ -27,6 +27,7 @@ security:
             provider: app_user_provider
 
     access_control:
+        - { path: ^/api/voice/webhook, roles: PUBLIC_ACCESS }
         - { path: ^/api/(register|login|token/refresh)$, roles: PUBLIC_ACCESS }
         - { path: ^/api/users$, methods: [POST], roles: PUBLIC_ACCESS }
         - { path: ^/api, roles: ROLE_USER }

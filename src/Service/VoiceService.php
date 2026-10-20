@@ -15,6 +15,13 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Lcobucci\JWT\Token\Plain;
+use Lcobucci\JWT\Validation\Constraint\IssuedBy;
+use Lcobucci\JWT\Validation\Constraint\SignedWith;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
+use Symfony\Component\Mercure\HubInterface;
+use Symfony\Component\Mercure\Update;
 
 final readonly class VoiceService
 {
@@ -28,8 +35,17 @@ final readonly class VoiceService
         private string $lkSecret,
         #[Autowire('%env(string:LIVEKIT_URL)%')]
         private string $lkUrl,
+        private HubInterface $hub,
+        private LoggerInterface $logger,
     ) {
     }
+
+    private const WEBHOOK_EVENTS = [
+        'participant_joined',
+        'participant_left',
+        'track_published',
+        'track_unpublished',
+    ];
 
     public function createToken(string $channelUuid, mixed $currentUser): OperationResult
     {
@@ -148,6 +164,82 @@ final readonly class VoiceService
             return $response->getStatusCode() === 200 ? $response->toArray(false) : [];
         } catch (\Throwable) {
             return [];
+        }
+    }
+
+    public static function topic(Server $server): string
+    {
+        return sprintf('servers/%s/voice', $server->getUuid());
+    }
+
+    public function subscriptionTopic(Server $server, mixed $currentUser): string
+    {
+        if (!$currentUser instanceof User || $this->members->findMembership($server, $currentUser) === null) {
+            throw new AccessDeniedHttpException();
+        }
+
+        return self::topic($server);
+    }
+
+    public function handleWebhook(string $body, ?string $authorization): void
+    {
+        $this->assertValidWebhook($body, $authorization);
+
+        $payload = json_decode($body, true);
+        $event = $payload['event'] ?? null;
+        $room = $payload['room']['name'] ?? '';
+        if (!in_array($event, self::WEBHOOK_EVENTS, true) || !str_starts_with($room, 'voice-')) {
+            return;
+        }
+
+        $channel = $this->channels->findOneBy(['uuid' => substr($room, strlen('voice-'))]);
+        $server = $channel instanceof Channel ? $channel->getServerSettings()?->getServer() : null;
+        if ($server === null) {
+            return;
+        }
+
+        try {
+            $this->hub->publish(new Update(
+                self::topic($server),
+                json_encode([
+                    'type' => $event,
+                    'channel' => (string) $channel->getUuid(),
+                    'identity' => $payload['participant']['identity'] ?? null,
+                ], JSON_THROW_ON_ERROR),
+                private: true,
+            ));
+        } catch (\Throwable $exception) {
+
+            $this->logger->error('Mercure publish failed.', ['exception' => $exception]);
+        }
+    }
+
+    private function assertValidWebhook(string $body, ?string $authorization): void
+    {
+        $configuration = Configuration::forSymmetricSigner(
+            new Sha256(),
+            InMemory::plainText($this->lkSecret),
+        );
+
+        try {
+            $token = $configuration->parser()->parse((string) $authorization);
+            $valid = $token instanceof Plain
+                && $configuration->validator()->validate(
+                    $token,
+                    new SignedWith($configuration->signer(), $configuration->verificationKey()),
+                    new IssuedBy($this->lkApiKey),
+                )
+
+                && hash_equals(
+                    (string) $token->claims()->get('sha256'),
+                    base64_encode(hash('sha256', $body, true)),
+                );
+        } catch (\Throwable) {
+            $valid = false;
+        }
+
+        if (!$valid) {
+            throw new UnauthorizedHttpException('LiveKit', 'Invalid webhook signature.');
         }
     }
 }

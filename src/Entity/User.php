@@ -46,10 +46,10 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     private ?Profile $profile = null;
 
     /**
-     * @var Collection<int, UserPublicKey>
+     * @var Collection<int, TrustedDevice>
      */
-    #[ORM\OneToMany(targetEntity: UserPublicKey::class, mappedBy: 'User', orphanRemoval: true)]
-    private Collection $userPublicKeys;
+    #[ORM\OneToMany(targetEntity: TrustedDevice::class, mappedBy: 'User')]
+    private Collection $trustedDevices;
 
     public function __construct()
     {
@@ -59,7 +59,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
         $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $this->roles = ['ROLE_USER'];
-        $this->userPublicKeys = new ArrayCollection();
+        $this->trustedDevices = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -150,31 +150,30 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
         return $this;
     }
-
     /**
-     * @return Collection<int, UserPublicKey>
+     * @return Collection<int, TrustedDevice>
      */
-    public function getUserPublicKeys(): Collection
+    public function getTrustedDevices(): Collection
     {
-        return $this->userPublicKeys;
+        return $this->trustedDevices;
     }
 
-    public function addUserPublicKey(UserPublicKey $userPublicKey): static
+    public function addTrustedDevice(TrustedDevice $trustedDevice): static
     {
-        if (!$this->userPublicKeys->contains($userPublicKey)) {
-            $this->userPublicKeys->add($userPublicKey);
-            $userPublicKey->setUser($this);
+        if (!$this->trustedDevices->contains($trustedDevice)) {
+            $this->trustedDevices->add($trustedDevice);
+            $trustedDevice->setUser($this);
         }
 
         return $this;
     }
 
-    public function removeUserPublicKey(UserPublicKey $userPublicKey): static
+    public function removeTrustedDevice(TrustedDevice $trustedDevice): static
     {
-        if ($this->userPublicKeys->removeElement($userPublicKey)) {
+        if ($this->trustedDevices->removeElement($trustedDevice)) {
             // set the owning side to null (unless already changed)
-            if ($userPublicKey->getUser() === $this) {
-                $userPublicKey->setUser(null);
+            if ($trustedDevice->getUser() === $this) {
+                $trustedDevice->setUser(null);
             }
         }
 

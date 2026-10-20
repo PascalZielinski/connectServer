@@ -30,7 +30,7 @@ final class Version20261015222316 extends AbstractMigration
         $this->addSql('CREATE TABLE server_settings (id INT AUTO_INCREMENT NOT NULL, name VARCHAR(100) NOT NULL, description VARCHAR(2000) DEFAULT NULL, publicy TINYINT NOT NULL, profile_image VARCHAR(2048) DEFAULT NULL, server_id INT NOT NULL, UNIQUE INDEX UNIQ_27E021791844E6B7 (server_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
         $this->addSql('CREATE TABLE servers (id INT AUTO_INCREMENT NOT NULL, uuid VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL, created_by_id INT NOT NULL, UNIQUE INDEX uniq_servers_uuid (uuid), INDEX IDX_4F8AF5F7B03A8386 (created_by_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
         $this->addSql('CREATE TABLE stored_uploads (id INT AUTO_INCREMENT NOT NULL, uuid VARCHAR(36) NOT NULL, uploaded_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, original_filename VARCHAR(255) NOT NULL, media_type VARCHAR(127) NOT NULL, image TINYINT NOT NULL, INDEX idx_stored_uploads_expires_at (expires_at), UNIQUE INDEX uniq_stored_uploads_uuid (uuid), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
-        $this->addSql('CREATE TABLE user_public_key (id INT AUTO_INCREMENT NOT NULL, public_key VARCHAR(64) DEFAULT NULL, device_name VARCHAR(255) DEFAULT NULL, verified_at DATETIME DEFAULT NULL, last_seen_at DATETIME DEFAULT NULL, user_id INT NOT NULL, INDEX IDX_C19E128FA76ED395 (user_id), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
+        
         $this->addSql('CREATE TABLE users (id INT AUTO_INCREMENT NOT NULL, uuid VARCHAR(36) NOT NULL, email VARCHAR(180) NOT NULL, password VARCHAR(255) NOT NULL, created_at DATETIME NOT NULL, roles JSON NOT NULL, UNIQUE INDEX uniq_users_email (email), UNIQUE INDEX uniq_users_uuid (uuid), PRIMARY KEY (id)) DEFAULT CHARACTER SET utf8mb4');
         $this->addSql('ALTER TABLE channels ADD CONSTRAINT FK_F314E2B611F46153 FOREIGN KEY (server_settings_id) REFERENCES server_settings (id) ON DELETE CASCADE');
         $this->addSql('ALTER TABLE members ADD CONSTRAINT FK_45A0D2FF1844E6B7 FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE');
@@ -42,7 +42,6 @@ final class Version20261015222316 extends AbstractMigration
         $this->addSql('ALTER TABLE server_image ADD CONSTRAINT FK_65BC66561844E6B7 FOREIGN KEY (server_id) REFERENCES server_settings (id)');
         $this->addSql('ALTER TABLE server_settings ADD CONSTRAINT FK_27E021791844E6B7 FOREIGN KEY (server_id) REFERENCES servers (id) ON DELETE CASCADE');
         $this->addSql('ALTER TABLE servers ADD CONSTRAINT FK_4F8AF5F7B03A8386 FOREIGN KEY (created_by_id) REFERENCES users (id) ON DELETE CASCADE');
-        $this->addSql('ALTER TABLE user_public_key ADD CONSTRAINT FK_C19E128FA76ED395 FOREIGN KEY (user_id) REFERENCES users (id)');
     }
 
     public function down(Schema $schema): void
@@ -58,7 +57,6 @@ final class Version20261015222316 extends AbstractMigration
         $this->addSql('ALTER TABLE server_image DROP FOREIGN KEY FK_65BC66561844E6B7');
         $this->addSql('ALTER TABLE server_settings DROP FOREIGN KEY FK_27E021791844E6B7');
         $this->addSql('ALTER TABLE servers DROP FOREIGN KEY FK_4F8AF5F7B03A8386');
-        $this->addSql('ALTER TABLE user_public_key DROP FOREIGN KEY FK_C19E128FA76ED395');
         $this->addSql('DROP TABLE channels');
         $this->addSql('DROP TABLE members');
         $this->addSql('DROP TABLE messages');
@@ -69,7 +67,6 @@ final class Version20261015222316 extends AbstractMigration
         $this->addSql('DROP TABLE server_settings');
         $this->addSql('DROP TABLE servers');
         $this->addSql('DROP TABLE stored_uploads');
-        $this->addSql('DROP TABLE user_public_key');
         $this->addSql('DROP TABLE users');
     }
 }

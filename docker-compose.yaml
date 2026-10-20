@@ -112,6 +112,10 @@ services:
                   use_external_ip: true
                 keys:
                     ${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY in .env}: ${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET in .env}
+                webhook:
+                  api_key: ${LIVEKIT_API_KEY}
+                  urls:
+                    - http://127.0.0.1:8080/api/voice/webhook
 
     mercure:
         image: dunglas/mercure:v0
