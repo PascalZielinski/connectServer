@@ -3,6 +3,7 @@
 .env
 .env.test
 .env.dev
+.editorconfig
 /.env.local
 /.env.local.php
 /.env.*.local
