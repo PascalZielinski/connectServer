@@ -32,13 +32,49 @@ class TrustedDevice
     #[ORM\Column]
     private ?\DateTimeImmutable $lastLoginAt = null;
 
-    #[ORM\Column(length: 255)]
-    private ?string $PublicKey = null;
+    #[ORM\Column(length: 45)]
+    private ?string $ipAddress = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $confirmedAt = null;
+
+    #[ORM\Column(length: 64, nullable: true)]
+    private ?string $confirmationTokenHash = null;
 
     public function __construct()
     {
         $this->deviceUuid = Uuid::v4();
         $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $this->lastLoginAt = $this->createdAt;
+    }
+
+    public function getIpAddress(): ?string { return $this->ipAddress; }
+
+    public function setIpAddress(string $ipAddress): static
+    {
+        $this->ipAddress = $ipAddress;
+        return $this;
+    }
+
+    public function getConfirmedAt(): ?\DateTimeImmutable { return $this->confirmedAt; }
+
+    public function isPending(): bool { return $this->confirmedAt === null; }
+
+    public function startConfirmation(string $tokenHash, \DateTimeImmutable $validUntil): static
+    {
+        $this->confirmedAt = null;
+        $this->confirmationTokenHash = $tokenHash;
+        $this->expiredAt = $validUntil;
+        return $this;
+    }
+
+    public function confirm(\DateTimeImmutable $trustedUntil): static
+    {
+        $this->confirmedAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $this->confirmationTokenHash = null;
+        $this->expiredAt = $trustedUntil;
+        $this->lastLoginAt = $this->confirmedAt;
+        return $this;
     }
 
     public function getId(): ?int
@@ -114,18 +150,6 @@ class TrustedDevice
     public function setLastLoginAt(\DateTimeImmutable $lastLoginAt): static
     {
         $this->lastLoginAt = $lastLoginAt;
-
-        return $this;
-    }
-
-    public function getPublicKey(): ?string
-    {
-        return $this->PublicKey;
-    }
-
-    public function setPublicKey(string $PublicKey): static
-    {
-        $this->PublicKey = $PublicKey;
 
         return $this;
     }

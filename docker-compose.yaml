@@ -44,6 +44,8 @@ services:
             SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
             MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-doctrine://default?auto_setup=0}
             MERCURE_JWT_SECRET: '${MERCURE_JWT_SECRET}'
+            MAILER_DSN: ${MAILER_DSN:-null://null}
+            FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
 
     upload-worker:
         build:
@@ -68,6 +70,25 @@ services:
                 condition: service_started
         environment:
             MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-doctrine://default?auto_setup=0}
+
+    mail-worker:
+        build:
+            context: .
+            dockerfile: dockerfile
+        working_dir: /var/www/html
+        user: www-data
+        command: ["php", "bin/console", "messenger:consume", "async", "--time-limit=3600", "-vv"]
+        restart: unless-stopped
+        volumes:
+            - .:/var/www/html
+        depends_on:
+            migrate:
+                condition: service_completed_successfully
+        environment:
+            MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-doctrine://default?auto_setup=0}
+            MAILER_DSN: ${MAILER_DSN:-null://null}
+            MAILER_FROM: ${MAILER_FROM:-noreply@example.com}
+            FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
 
     db:
         image: mariadb:10.4.32

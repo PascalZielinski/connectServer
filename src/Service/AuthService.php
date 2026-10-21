@@ -14,6 +14,7 @@ use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use App\Service\TrustedDeviceService;
 
 final readonly class AuthService
 {
@@ -25,6 +26,7 @@ final readonly class AuthService
         private JWTTokenManagerInterface $jwtManager,
         private RefreshTokenGeneratorInterface $refreshTokenGenerator,
         private RefreshTokenManagerInterface $refreshTokenManager,
+        private TrustedDeviceService $trustedDeviceService,
         #[Autowire('%gesdinet_jwt_refresh_token.ttl%')]
         private int $refreshTokenTtl,
     ) {
@@ -47,13 +49,22 @@ final readonly class AuthService
         return new OperationResult($this->register($data['email'], $data['password'], $data['password_confirm']), 201);
     }
 
-    public function loginRequest(array $data): OperationResult
+    public function loginRequest(array $data, string $ip, ?string $userAgent = null): OperationResult
     {
         if (!isset($data['email'], $data['password']) || !is_string($data['email']) || !is_string($data['password'])) {
             return new OperationResult(['error' => 'Email and password are required.'], 400);
         }
 
-        return new OperationResult($this->login($data['email'], $data['password']));
+        $user = $this->authenticate($data['email'], $data['password']);
+
+        if (!$this->trustedDeviceService->isTrusted($user, $ip, $userAgent)) {
+            return new OperationResult([
+                'status' => 'device_verification_required',
+                'message' => 'Please confirm this device via the email we sent you.',
+            ], 202);
+        }
+
+        return new OperationResult($this->issueTokens($user));
     }
 
     public function currentUser(mixed $user): OperationResult
@@ -92,7 +103,7 @@ final readonly class AuthService
         return $this->issueTokens($user);
     }
 
-    public function login(string $email, string $password): array
+    private function authenticate(string $email, string $password): User
     {
         $user = $this->users->findOneBy(['email' => strtolower(trim($email))]);
 
@@ -100,7 +111,12 @@ final readonly class AuthService
             throw new UnauthorizedHttpException('Bearer', 'Invalid email or password.');
         }
 
-        return $this->issueTokens($user);
+        return $user;
+    }
+
+    public function login(string $email, string $password): array
+    {
+        return $this->issueTokens($this->authenticate($email, $password));
     }
 
     private function validateUser(User $user): void

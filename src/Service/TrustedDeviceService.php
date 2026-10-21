@@ -4,92 +4,94 @@ namespace App\Service;
 
 use App\Entity\TrustedDevice;
 use App\Entity\User;
+use App\Repository\TrustedDeviceRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\Mime\Email;
 
 final readonly class TrustedDeviceService
 {
-    private const DEFAULT_TTL_DAYS = 30;
-    private const MAX_DEVICES_PER_USER = 10;
+    private const CONFIRMATION_TTL = '+30 minutes';
+    private const TRUST_TTL = '+30 days';
 
     public function __construct(
-        private EntityManagerInterface $em,
+        private TrustedDeviceRepository $devices,
+        private EntityManagerInterface $entityManager,
+        private MailerInterface $mailer,
+        #[Autowire('%env(MAILER_FROM)%')]
+        private string $mailFrom,
+        #[Autowire('%env(FRONTEND_URL)%')]
+        private string $frontendUrl,
     ) {
     }
 
-    public function register(User $user, array $data): OperationResult
+    public function isTrusted(User $user, string $ip, ?string $userAgent = null): bool
     {
-        $deviceName = trim((string) ($data['deviceName'] ?? ''));
-        $publicKey  = trim((string) ($data['publicKey']  ?? ''));
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $device = $this->devices->findOneBy(['User' => $user, 'ipAddress' => $ip]);
 
-        if ($deviceName === '') {
-            return new OperationResult(['error' => 'deviceName is required'], 422);
-        }
-        if ($publicKey === '') {
-            return new OperationResult(['error' => 'publicKey is required'], 422);
-        }
+        if ($device !== null && $device->getExpiredAt() > $now) {
+            if (!$device->isPending()) {
+                $device->setLastLoginAt($now);
+                $this->entityManager->flush();
 
-        $existingCount = $this->em->getRepository(TrustedDevice::class)
-            ->count(['User' => $user]);
+                return true;
+            }
 
-        if ($existingCount >= self::MAX_DEVICES_PER_USER) {
-            return new OperationResult(['error' => 'Device limit reached'], 429);
+            return false;
         }
 
-        $device = new TrustedDevice();
-        $device->setUser($user);
-        $device->setDeviceName($deviceName);
-        $device->setPublicKey($publicKey);
-        $device->setExpiredAt(
-            (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
-                ->modify('+' . self::DEFAULT_TTL_DAYS . ' days')
-        );
+        $device ??= (new TrustedDevice())
+            ->setUser($user)
+            ->setIpAddress($ip)
+            ->setDeviceName(mb_substr($userAgent ?? 'Unbekanntes Gerät', 0, 255));
 
-        $this->em->persist($device);
-        $this->em->flush();
+        $token = bin2hex(random_bytes(32));
+        $device->startConfirmation(hash('sha256', $token), $now->modify(self::CONFIRMATION_TTL));
 
-        return new OperationResult($this->serialize($device), 201);
+        $this->entityManager->persist($device);
+        $this->entityManager->flush();
+
+        $this->sendWarningMail($user, $device, $token);
+
+        return false;
     }
 
-    public function list(User $user): OperationResult
+    public function confirm(string $token): bool
     {
-        $devices = $this->em->getRepository(TrustedDevice::class)
-            ->findBy(['User' => $user], ['createdAt' => 'DESC']);
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $device = $this->devices->findOneBy(['confirmationTokenHash' => hash('sha256', $token)]);
 
-        return new OperationResult(
-            array_map(fn (TrustedDevice $d) => $this->serialize($d), $devices),
-            200,
-        );
-    }
-
-    public function revoke(User $user, int $id): OperationResult
-    {
-        $device = $this->em->getRepository(TrustedDevice::class)->find($id);
-
-        if (!$device || $device->getUser()?->getId() !== $user->getId()) {
-
-            return new OperationResult(['error' => 'Device not found'], 404);
+        if ($device === null || !$device->isPending() || $device->getExpiredAt() < $now) {
+            return false;
         }
 
-        $this->em->remove($device);
-        $this->em->flush();
+        $device->confirm($now->modify(self::TRUST_TTL));
+        $this->entityManager->flush();
 
-        return new OperationResult(['message' => 'Device revoked'], 200);
+        return true;
     }
 
-    private function serialize(TrustedDevice $device): array
+    private function sendWarningMail(User $user, TrustedDevice $device, string $token): void
     {
-        $now       = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $expiredAt = $device->getExpiredAt();
+        $link = rtrim($this->frontendUrl, '/') . '/device/confirm?token=' . $token;
 
-        return [
-            'id'          => $device->getId(),
-            'deviceName'  => $device->getDeviceName(),
-            'deviceUuid'  => $device->getDeviceUuid() ? (string) $device->getDeviceUuid() : null,
-            'publicKey'   => $device->getPublicKey(),
-            'createdAt'   => $device->getCreatedAt()?->format(\DateTimeInterface::ATOM),
-            'expiredAt'   => $expiredAt?->format(\DateTimeInterface::ATOM),
-            'lastLoginAt' => $device->getLastLoginAt()?->format(\DateTimeInterface::ATOM),
-            'isExpired'   => $expiredAt !== null && $expiredAt < $now,
-        ];
+        $email = (new Email())
+            ->from($this->mailFrom)
+            ->to($user->getEmail())
+            ->subject('Warnung: Anmeldeversuch von unbekanntem Gerät')
+            ->text(sprintf(
+                "Es gab einen Anmeldeversuch auf dein Konto von einem unbekannten Gerät.\n\n"
+                . "IP: %s\nGerät: %s\n\n"
+                . "Warst du das? Dann bestätige das Gerät (Link 30 Minuten gültig):\n%s\n\n"
+                . "Warst du das nicht? Ignoriere diese Mail und ändere sofort dein Passwort. "
+                . "Ohne deine Bestätigung bleibt der Login blockiert.",
+                $device->getIpAddress(),
+                $device->getDeviceName(),
+                $link,
+            ));
+
+        $this->mailer->send($email);
     }
 }

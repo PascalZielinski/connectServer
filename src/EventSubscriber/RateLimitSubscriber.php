@@ -13,7 +13,6 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
 
 final class RateLimitSubscriber implements EventSubscriberInterface
 {
-    /** Routen ohne eingeloggten User -> Limit pro IP, läuft VOR der Firewall */
     private const IP_ROUTES = [
         'api_login',
         'api_register',
@@ -130,7 +129,7 @@ final class RateLimitSubscriber implements EventSubscriberInterface
     private function applies(RequestEvent $event): bool
     {
         if ('test' === $this->env) {
-            return false; // kein Rate-Limit im Test
+            return false;
         }
 
         if (!$event->isMainRequest() || $event->hasResponse()) {
