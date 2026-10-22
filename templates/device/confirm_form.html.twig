@@ -1,0 +1,10 @@
+{% extends 'device/layout.html.twig' %}
+
+{% block body %}
+    <p>Möchtest du dieses Gerät als vertrauenswürdig bestätigen?</p>
+
+    <form method="post" action="{{ path('device_confirm_page') }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <button type="submit">Gerät bestätigen</button>
+    </form>
+{% endblock %}

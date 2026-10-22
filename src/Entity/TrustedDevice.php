@@ -6,6 +6,7 @@ use App\Repository\TrustedDeviceRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
+#[ORM\UniqueConstraint(name: 'uniq_device_user_secret', columns: ['user_id', 'device_secret_hash'])]
 #[ORM\Entity(repositoryClass: TrustedDeviceRepository::class)]
 class TrustedDevice
 {
@@ -32,8 +33,8 @@ class TrustedDevice
     #[ORM\Column]
     private ?\DateTimeImmutable $lastLoginAt = null;
 
-    #[ORM\Column(length: 45)]
-    private ?string $ipAddress = null;
+    #[ORM\Column(length: 64)]
+    private string $deviceSecretHash = '';
 
     #[ORM\Column(nullable: true)]
     private ?\DateTimeImmutable $confirmedAt = null;
@@ -48,11 +49,15 @@ class TrustedDevice
         $this->lastLoginAt = $this->createdAt;
     }
 
-    public function getIpAddress(): ?string { return $this->ipAddress; }
-
-    public function setIpAddress(string $ipAddress): static
+    public function getDeviceSecretHash(): string
     {
-        $this->ipAddress = $ipAddress;
+        return $this->deviceSecretHash;
+    }
+
+    public function setDeviceSecretHash(string $hash): self
+    {
+        $this->deviceSecretHash = $hash;
+
         return $this;
     }
 

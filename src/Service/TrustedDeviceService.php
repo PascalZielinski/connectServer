@@ -9,10 +9,11 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
+use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 
 final readonly class TrustedDeviceService
 {
-    private const CONFIRMATION_TTL = '+30 minutes';
+    private const CONFIRMATION_TTL = '+15 minutes';
     private const TRUST_TTL = '+30 days';
 
     public function __construct(
@@ -26,10 +27,11 @@ final readonly class TrustedDeviceService
     ) {
     }
 
-    public function isTrusted(User $user, string $ip, ?string $userAgent = null): bool
+    public function isTrusted(User $user, string $deviceSecret, ?string $userAgent = null): bool
     {
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $device = $this->devices->findOneBy(['User' => $user, 'ipAddress' => $ip]);
+        $hash = hash('sha256', $deviceSecret);
+        $device = $this->devices->findOneBy(['User' => $user, 'deviceSecretHash' => $hash]);
 
         if ($device !== null && $device->getExpiredAt() > $now) {
             if (!$device->isPending()) {
@@ -42,10 +44,18 @@ final readonly class TrustedDeviceService
             return false;
         }
 
+        if ($this->devices->countPendingSince($user, $now->modify('-1 hour')) >= 3) {
+            return false;
+        }
+
+        $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $userAgent ?? '') ?: 'Unbekanntes Gerät';
+
         $device ??= (new TrustedDevice())
             ->setUser($user)
-            ->setIpAddress($ip)
-            ->setDeviceName(mb_substr($userAgent ?? 'Unbekanntes Gerät', 0, 255));
+            ->setDeviceSecretHash($hash);
+
+        $device
+            ->setDeviceName(mb_substr($name, 0, 255));
 
         $token = bin2hex(random_bytes(32));
         $device->startConfirmation(hash('sha256', $token), $now->modify(self::CONFIRMATION_TTL));
@@ -53,7 +63,11 @@ final readonly class TrustedDeviceService
         $this->entityManager->persist($device);
         $this->entityManager->flush();
 
-        $this->sendWarningMail($user, $device, $token);
+        try {
+            $this->sendWarningMail($user, $device, $token);
+        } catch (TransportExceptionInterface $e) {
+
+        }
 
         return false;
     }
@@ -82,12 +96,10 @@ final readonly class TrustedDeviceService
             ->to($user->getEmail())
             ->subject('Warnung: Anmeldeversuch von unbekanntem Gerät')
             ->text(sprintf(
-                "Es gab einen Anmeldeversuch auf dein Konto von einem unbekannten Gerät.\n\n"
-                . "IP: %s\nGerät: %s\n\n"
-                . "Warst du das? Dann bestätige das Gerät (Link 30 Minuten gültig):\n%s\n\n"
+                "Es gab einen Anmeldeversuch auf dein Konto von einem unbekannten Gerät:\n%s\n\n"
+                . "Warst du das? Dann bestätige das Gerät (Link 15 Minuten gültig):\n%s\n\n"
                 . "Warst du das nicht? Ignoriere diese Mail und ändere sofort dein Passwort. "
                 . "Ohne deine Bestätigung bleibt der Login blockiert.",
-                $device->getIpAddress(),
                 $device->getDeviceName(),
                 $link,
             ));

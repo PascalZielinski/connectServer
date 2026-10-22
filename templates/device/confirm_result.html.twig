@@ -1,0 +1,9 @@
+{% extends 'device/layout.html.twig' %}
+
+{% block body %}
+    {% if success %}
+        <p>Gerät bestätigt. Du kannst dich jetzt in der App anmelden.</p>
+    {% else %}
+        <p>Link ungültig oder abgelaufen. Melde dich erneut an, um eine neue Mail zu bekommen.</p>
+    {% endif %}
+{% endblock %}
