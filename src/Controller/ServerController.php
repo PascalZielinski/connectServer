@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Entity\Server;
 use App\Service\OperationResult;
 use App\Service\ServerService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;

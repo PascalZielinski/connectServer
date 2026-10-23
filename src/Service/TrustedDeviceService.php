@@ -10,6 +10,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
+use Psr\Log\LoggerInterface;
 
 final readonly class TrustedDeviceService
 {
@@ -20,6 +21,7 @@ final readonly class TrustedDeviceService
         private TrustedDeviceRepository $devices,
         private EntityManagerInterface $entityManager,
         private MailerInterface $mailer,
+        private LoggerInterface $logger, // fehlt bei dir
         #[Autowire('%env(MAILER_FROM)%')]
         private string $mailFrom,
         #[Autowire('%env(FRONTEND_URL)%')]
@@ -31,17 +33,21 @@ final readonly class TrustedDeviceService
     {
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $hash = hash('sha256', $deviceSecret);
-        $device = $this->devices->findOneBy(['User' => $user, 'deviceSecretHash' => $hash]);
+        $device = $this->devices->findOneBy(['user' => $user, 'deviceSecretHash' => $hash]);
 
-        if ($device !== null && $device->getExpiredAt() > $now) {
-            if (!$device->isPending()) {
+        if ($device !== null) {
+
+            if ($device->isTrusted($now)) {
                 $device->setLastLoginAt($now);
                 $this->entityManager->flush();
 
                 return true;
             }
 
-            return false;
+            if ($device->isPending() && !$device->isConfirmationTokenExpired($now)) {
+                return false;
+            }
+
         }
 
         if ($this->devices->countPendingSince($user, $now->modify('-1 hour')) >= 3) {
@@ -54,8 +60,7 @@ final readonly class TrustedDeviceService
             ->setUser($user)
             ->setDeviceSecretHash($hash);
 
-        $device
-            ->setDeviceName(mb_substr($name, 0, 255));
+        $device->setDeviceName(mb_substr($name, 0, 255));
 
         $token = bin2hex(random_bytes(32));
         $device->startConfirmation(hash('sha256', $token), $now->modify(self::CONFIRMATION_TTL));
@@ -66,7 +71,7 @@ final readonly class TrustedDeviceService
         try {
             $this->sendWarningMail($user, $device, $token);
         } catch (TransportExceptionInterface $e) {
-
+            $this->logger->error('Device confirmation mail failed.', ['exception' => $e]);
         }
 
         return false;
@@ -77,7 +82,7 @@ final readonly class TrustedDeviceService
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $device = $this->devices->findOneBy(['confirmationTokenHash' => hash('sha256', $token)]);
 
-        if ($device === null || !$device->isPending() || $device->getExpiredAt() < $now) {
+        if ($device === null || !$device->isPending() || $device->isConfirmationTokenExpired($now)) {
             return false;
         }
 

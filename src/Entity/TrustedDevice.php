@@ -6,8 +6,9 @@ use App\Repository\TrustedDeviceRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
-#[ORM\UniqueConstraint(name: 'uniq_device_user_secret', columns: ['user_id', 'device_secret_hash'])]
 #[ORM\Entity(repositoryClass: TrustedDeviceRepository::class)]
+#[ORM\UniqueConstraint(name: 'uniq_device_user_secret', columns: ['user_id', 'device_secret_hash'])]
+#[ORM\UniqueConstraint(name: 'uniq_device_confirmation_token', columns: ['confirmation_token_hash'])]
 class TrustedDevice
 {
     #[ORM\Id]
@@ -16,16 +17,13 @@ class TrustedDevice
     private ?int $id = null;
 
     #[ORM\ManyToOne(inversedBy: 'trustedDevices')]
-    private ?User $User = null;
+    private ?User $user = null;
 
     #[ORM\Column(length: 255)]
-    private ?string $DeviceName = null;
+    private ?string $deviceName = null;
 
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
-
-    #[ORM\Column]
-    private ?\DateTimeImmutable $expiredAt = null;
 
     #[ORM\Column(type: 'uuid')]
     private ?Uuid $deviceUuid = null;
@@ -42,120 +40,87 @@ class TrustedDevice
     #[ORM\Column(length: 64, nullable: true)]
     private ?string $confirmationTokenHash = null;
 
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $confirmationTokenExpiresAt = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $expiresAt = null;
+
     public function __construct()
     {
         $this->deviceUuid = Uuid::v4();
         $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $this->lastLoginAt = $this->createdAt;
+        $this->confirmationTokenExpiresAt = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
     }
 
-    public function getDeviceSecretHash(): string
-    {
-        return $this->deviceSecretHash;
-    }
-
-    public function setDeviceSecretHash(string $hash): self
-    {
-        $this->deviceSecretHash = $hash;
-
-        return $this;
-    }
-
-    public function getConfirmedAt(): ?\DateTimeImmutable { return $this->confirmedAt; }
-
-    public function isPending(): bool { return $this->confirmedAt === null; }
-
-    public function startConfirmation(string $tokenHash, \DateTimeImmutable $validUntil): static
+    public function startConfirmation(string $tokenHash, \DateTimeImmutable $tokenValidUntil): static
     {
         $this->confirmedAt = null;
+        $this->expiresAt = null;
         $this->confirmationTokenHash = $tokenHash;
-        $this->expiredAt = $validUntil;
+        $this->confirmationTokenExpiresAt = $tokenValidUntil;
+
         return $this;
     }
 
     public function confirm(\DateTimeImmutable $trustedUntil): static
     {
-        $this->confirmedAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+
+        $this->confirmedAt = $now;
+        $this->lastLoginAt = $now;
+        $this->expiresAt = $trustedUntil;
+
         $this->confirmationTokenHash = null;
-        $this->expiredAt = $trustedUntil;
-        $this->lastLoginAt = $this->confirmedAt;
-        return $this;
-    }
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
-
-    public function getUser(): ?User
-    {
-        return $this->User;
-    }
-
-    public function setUser(?User $User): static
-    {
-        $this->User = $User;
+        $this->confirmationTokenExpiresAt = null;
 
         return $this;
     }
 
-    public function getDeviceName(): ?string
+    public function isPending(): bool
     {
-        return $this->DeviceName;
+        return $this->confirmedAt === null;
     }
 
-    public function setDeviceName(string $DeviceName): static
+    public function isConfirmationTokenExpired(?\DateTimeImmutable $now = null): bool
     {
-        $this->DeviceName = $DeviceName;
-
-        return $this;
+        return $this->confirmationTokenExpiresAt === null
+            || ($now ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))) >= $this->confirmationTokenExpiresAt;
     }
 
-    public function getCreatedAt(): ?\DateTimeImmutable
+    public function isTrusted(?\DateTimeImmutable $now = null): bool
     {
-        return $this->createdAt;
+        return $this->confirmedAt !== null
+            && $this->expiresAt !== null
+            && ($now ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'))) < $this->expiresAt;
     }
 
-    public function setCreatedAt(\DateTimeImmutable $createdAt): static
-    {
-        $this->createdAt = $createdAt;
+    public function getId(): ?int { return $this->id; }
 
-        return $this;
-    }
+    public function getUser(): ?User { return $this->user; }
+    public function setUser(?User $user): static { $this->user = $user; return $this; }
 
-    public function getExpiredAt(): ?\DateTimeImmutable
-    {
-        return $this->expiredAt;
-    }
+    public function getDeviceName(): ?string { return $this->deviceName; }
+    public function setDeviceName(string $deviceName): static { $this->deviceName = $deviceName; return $this; }
 
-    public function setExpiredAt(\DateTimeImmutable $expiredAt): static
-    {
-        $this->expiredAt = $expiredAt;
+    public function getCreatedAt(): ?\DateTimeImmutable { return $this->createdAt; }
+    public function setCreatedAt(\DateTimeImmutable $createdAt): static { $this->createdAt = $createdAt; return $this; }
 
-        return $this;
-    }
+    public function getDeviceUuid(): ?Uuid { return $this->deviceUuid; }
+    public function setDeviceUuid(Uuid $deviceUuid): static { $this->deviceUuid = $deviceUuid; return $this; }
 
-    public function getDeviceUuid(): ?Uuid
-    {
-        return $this->deviceUuid;
-    }
+    public function getLastLoginAt(): ?\DateTimeImmutable { return $this->lastLoginAt; }
+    public function setLastLoginAt(\DateTimeImmutable $lastLoginAt): static { $this->lastLoginAt = $lastLoginAt; return $this; }
 
-    public function setDeviceUuid(Uuid $deviceUuid): static
-    {
-        $this->deviceUuid = $deviceUuid;
+    public function getDeviceSecretHash(): string { return $this->deviceSecretHash; }
+    public function setDeviceSecretHash(string $hash): static { $this->deviceSecretHash = $hash; return $this; }
 
-        return $this;
-    }
+    public function getConfirmedAt(): ?\DateTimeImmutable { return $this->confirmedAt; }
 
-    public function getLastLoginAt(): ?\DateTimeImmutable
-    {
-        return $this->lastLoginAt;
-    }
+    public function getConfirmationTokenHash(): ?string { return $this->confirmationTokenHash; }
+    public function getConfirmationTokenExpiresAt(): ?\DateTimeImmutable { return $this->confirmationTokenExpiresAt; }
 
-    public function setLastLoginAt(\DateTimeImmutable $lastLoginAt): static
-    {
-        $this->lastLoginAt = $lastLoginAt;
-
-        return $this;
-    }
+    public function getExpiresAt(): ?\DateTimeImmutable { return $this->expiresAt; }
+    public function setExpiresAt(?\DateTimeImmutable $expiresAt): static { $this->expiresAt = $expiresAt; return $this; }
 }

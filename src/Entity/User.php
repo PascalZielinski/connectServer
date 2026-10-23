@@ -25,6 +25,11 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 36, unique: true)]
     private string $uuid;
 
+    #[Assert\NotBlank(groups: ['registration'])]
+    #[Assert\Length(min: 8, max: 128, groups: ['registration'])]
+    #[Assert\NotCompromisedPassword(skipOnError: true, groups: ['registration'])]
+    private ?string $plainPassword = null;
+
     #[ORM\Column(length: 180)]
     #[Assert\NotBlank]
     #[Assert\Email]
@@ -51,12 +56,12 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToMany(targetEntity: TrustedDevice::class, mappedBy: 'User')]
     private Collection $trustedDevices;
 
+    #[ORM\Column(options: ['default' => false])]
+    private bool $isVerified = false;
+
     public function __construct()
     {
         $this->uuid = Uuid::v4();
-        $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $this->roles = ['ROLE_USER'];
-
         $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $this->roles = ['ROLE_USER'];
         $this->trustedDevices = new ArrayCollection();
@@ -65,6 +70,17 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getPlainPassword(): ?string
+    {
+        return $this->plainPassword;
+    }
+
+    public function setPlainPassword(?string $plainPassword): static
+    {
+        $this->plainPassword = $plainPassword;
+        return $this;
     }
 
     public function getUuid(): string
@@ -137,6 +153,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function eraseCredentials(): void
     {
+        $this->plainPassword = null;
     }
 
     public function getUserIdentifier(): string
@@ -176,6 +193,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
                 $trustedDevice->setUser(null);
             }
         }
+
+        return $this;
+    }
+
+    public function isVerified(): ?bool
+    {
+        return $this->isVerified;
+    }
+
+    public function setIsVerified(bool $isVerified): static
+    {
+        $this->isVerified = $isVerified;
 
         return $this;
     }

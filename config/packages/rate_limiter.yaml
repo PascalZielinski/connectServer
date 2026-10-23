@@ -8,7 +8,7 @@ framework:
             policy: 'sliding_window'
             limit: 30
             interval: '1 minute'
-        chat_typing: 
+        chat_typing:
             policy: 'token_bucket'
             limit: 3
             rate: { interval: '3 seconds', amount: 1 }
@@ -31,8 +31,16 @@ framework:
             policy: 'sliding_window'
             limit: 5
             interval: '15 minutes'
-        register: 
+        login_account:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '15 minutes'
+        register:
             policy: 'fixed_window'
+            limit: 3
+            interval: '1 hour'
+        register_account:
+            policy: 'sliding_window'
             limit: 3
             interval: '1 hour'
         password_reset:
@@ -52,3 +60,24 @@ framework:
             policy: 'token_bucket'
             limit: 300
             rate: { interval: '1 second', amount: 5 }
+
+        login_confirm_mail:
+            policy: 'fixed_window'
+            limit: 1
+            interval: '5 minutes'
+        login_confirm_mail_daily:
+            policy: 'sliding_window'
+            limit: 5
+            interval: '24 hours'
+        mail_verification:
+            policy: 'fixed_window'
+            limit: 1
+            interval: '5 minutes'
+        mail_account_exists:
+            policy: 'fixed_window'
+            limit: 1
+            interval: '15 minutes'
+        mail_account_exists_daily:
+            policy: 'sliding_window'
+            limit: 3
+            interval: '24 hours'

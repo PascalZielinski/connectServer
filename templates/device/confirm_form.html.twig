@@ -1,6 +1,7 @@
 {% extends 'device/layout.html.twig' %}
 
 {% block body %}
+    <meta name="referrer" content="no-referrer">
     <p>Möchtest du dieses Gerät als vertrauenswürdig bestätigen?</p>
 
     <form method="post" action="{{ path('device_confirm_page') }}">

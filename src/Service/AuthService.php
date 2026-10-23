@@ -3,12 +3,16 @@
 namespace App\Service;
 
 use App\Entity\User;
+use App\Event\ExistingAccountRegistrationEvent;
+use App\Event\UserRegisteredEvent;
 use App\Repository\UserRepository;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Gesdinet\JWTRefreshTokenBundle\Generator\RefreshTokenGeneratorInterface;
 use Gesdinet\JWTRefreshTokenBundle\Model\RefreshTokenManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
@@ -27,6 +31,7 @@ final readonly class AuthService
         private RefreshTokenGeneratorInterface $refreshTokenGenerator,
         private RefreshTokenManagerInterface $refreshTokenManager,
         private TrustedDeviceService $trustedDeviceService,
+        private EventDispatcherInterface $dispatcher,
         #[Autowire('%gesdinet_jwt_refresh_token.ttl%')]
         private int $refreshTokenTtl,
         #[Autowire('%env(AUTH_DUMMY_HASH)%')]
@@ -51,7 +56,7 @@ final readonly class AuthService
         return $this->tokensOrDeviceVerification($user, $deviceSecret, $userAgent, pendingStatus: 201);
     }
 
-    public function loginRequest(array $data, string $deviceSecret, string $ip, ?string $userAgent = null): OperationResult
+    public function loginRequest(array $data, string $deviceSecret, ?string $userAgent = null): OperationResult
     {
         if (!isset($data['email'], $data['password']) || !is_string($data['email']) || !is_string($data['password'])) {
             return new OperationResult(['error' => 'Email and password are required.'], 400);
@@ -78,22 +83,50 @@ final readonly class AuthService
         return new OperationResult($this->userPayload($user));
     }
 
-    private function register(string $email, string $password, string $passwordConfirm): User
-    {
+    private function register(
+        string $email,
+        string $password,
+        string $passwordConfirm
+    ): ?User {
         if (!hash_equals($password, $passwordConfirm)) {
-            $this->throwUnprocessable(['password_confirm' => ['Passwords do not match.']]);
+            $this->throwUnprocessable([
+                'password_confirm' => ['Passwords do not match.'],
+            ]);
         }
 
-        $user = (new User())->setEmail($email)->setPassword($password);
+        $email = strtolower(trim($email));
+
+        $user = (new User())
+            ->setEmail($email)
+            ->setPlainPassword($password);
+
         $this->validateUser($user);
 
-        if ($this->users->findOneBy(['email' => $user->getEmail()]) !== null) {
-            throw new ConflictHttpException('An account with this email already exists.');
+        $user->setPasswordHash(
+            $this->passwordHasher->hashPassword($user, $password)
+        );
+        $user->eraseCredentials();
+
+        if ($this->users->findOneBy(['email' => $email]) !== null) {
+            $this->dispatcher->dispatch(
+                new ExistingAccountRegistrationEvent($email)
+            );
+
+            return null;
         }
 
-        $user->setPasswordHash($this->passwordHasher->hashPassword($user, $password));
-        $this->entityManager->persist($user);
-        $this->entityManager->flush();
+        try {
+            $this->entityManager->persist($user);
+            $this->entityManager->flush();
+        } catch (UniqueConstraintViolationException) {
+            $this->dispatcher->dispatch(
+                new ExistingAccountRegistrationEvent($email)
+            );
+
+            return null;
+        }
+
+        $this->dispatcher->dispatch(new UserRegisteredEvent($user));
 
         return $user;
     }
@@ -153,7 +186,7 @@ final readonly class AuthService
 
     private function validateUser(User $user): void
     {
-        $violations = $this->validator->validate($user);
+        $violations = $this->validator->validate($user, null, ['Default', 'registration']);
         if (count($violations) === 0) {
             return;
         }

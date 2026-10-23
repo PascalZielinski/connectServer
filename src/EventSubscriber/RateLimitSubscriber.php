@@ -6,6 +6,7 @@ use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
@@ -37,6 +38,8 @@ final class RateLimitSubscriber implements EventSubscriberInterface
         #[Autowire(service: 'limiter.upload')] private RateLimiterFactory $upload,
         #[Autowire(service: 'limiter.upload_daily')] private RateLimiterFactory $uploadDaily,
         #[Autowire(service: 'limiter.voice_token')] private RateLimiterFactory $voiceToken,
+        #[Autowire(service: 'limiter.login_account')] private RateLimiterFactory $loginAccount,
+        #[Autowire(service: 'limiter.register_account')] private RateLimiterFactory $registerAccount,
         #[Autowire('%kernel.environment%')]
         private readonly string $env,
     ) {
@@ -59,17 +62,46 @@ final class RateLimitSubscriber implements EventSubscriberInterface
         }
 
         $request = $event->getRequest();
+        $route = $request->attributes->get('_route');
 
-        $factory = match ($request->attributes->get('_route')) {
+        $factory = match ($route) {
             'api_login' => $this->login,
             'gesdinet_jwt_refresh_token' => $this->refresh,
             'api_register', 'api_users_create' => $this->register,
             default => null,
         };
 
-        if ($factory) {
-            $this->consume($event, $factory, $request->getClientIp() ?? 'unknown');
+        if ($factory && !$this->consume($event, $factory, $request->getClientIp() ?? 'unknown')) {
+            return;
         }
+
+        $accountFactory = match ($route) {
+            'api_login' => $this->loginAccount,
+            'api_register', 'api_users_create' => $this->registerAccount,
+            default => null,
+        };
+
+        if ($accountFactory) {
+            $email = $this->submittedEmail($request);
+            if ($email !== null) {
+                $this->consume($event, $accountFactory, hash('sha256', $email));
+            }
+        }
+    }
+
+    private function submittedEmail(Request $request): ?string
+    {
+        try {
+            $data = json_decode($request->getContent(), true, 4, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+
+        $email = is_array($data) ? ($data['email'] ?? null) : null;
+
+        return is_string($email) && $email !== ''
+            ? strtolower(trim(mb_substr($email, 0, 254)))
+            : null;
     }
 
     public function onLateRequest(RequestEvent $event): void
