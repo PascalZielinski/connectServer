@@ -59,12 +59,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(options: ['default' => false])]
     private bool $isVerified = false;
 
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $IsVerifiedExpiresAt = null;
+
+    public const VERIFY_TTL = '+30 minutes';
+
     public function __construct()
     {
         $this->uuid = Uuid::v4();
         $this->createdAt = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $this->roles = ['ROLE_USER'];
         $this->trustedDevices = new ArrayCollection();
+        $this->IsVerifiedExpiresAt = new \DateTimeImmutable(self::VERIFY_TTL, new \DateTimeZone('UTC'));
     }
 
     public function getId(): ?int
@@ -179,19 +185,6 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     {
         if (!$this->trustedDevices->contains($trustedDevice)) {
             $this->trustedDevices->add($trustedDevice);
-            $trustedDevice->setUser($this);
-        }
-
-        return $this;
-    }
-
-    public function removeTrustedDevice(TrustedDevice $trustedDevice): static
-    {
-        if ($this->trustedDevices->removeElement($trustedDevice)) {
-            // set the owning side to null (unless already changed)
-            if ($trustedDevice->getUser() === $this) {
-                $trustedDevice->setUser(null);
-            }
         }
 
         return $this;
@@ -205,6 +198,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setIsVerified(bool $isVerified): static
     {
         $this->isVerified = $isVerified;
+
+        return $this;
+    }
+
+    public function getIsVerifiedExpiresAt(): ?\DateTimeImmutable
+    {
+        return $this->IsVerifiedExpiresAt;
+    }
+
+    public function setIsVerifiedExpiresAt(?\DateTimeImmutable $IsVerifiedExpiresAt): static
+    {
+        $this->IsVerifiedExpiresAt = $IsVerifiedExpiresAt;
 
         return $this;
     }

@@ -29,9 +29,9 @@ final class EmailService
 
         $signature = $this->verifyEmailHelper->generateSignature(
             'app_verify_email',
-            (string) $user->getId(),
+            $user->getUuid(), 
             $user->getEmail(),
-            ['id' => $user->getId()],
+            ['uuid' => $user->getUuid()],
         );
 
         $this->bus->dispatch(new SendEmailMessage(

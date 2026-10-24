@@ -9,7 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
-use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Psr\Log\LoggerInterface;
 
 final readonly class TrustedDeviceService
@@ -21,7 +21,7 @@ final readonly class TrustedDeviceService
         private TrustedDeviceRepository $devices,
         private EntityManagerInterface $entityManager,
         private MailerInterface $mailer,
-        private LoggerInterface $logger, // fehlt bei dir
+        private LoggerInterface $logger,
         #[Autowire('%env(MAILER_FROM)%')]
         private string $mailFrom,
         #[Autowire('%env(FRONTEND_URL)%')]

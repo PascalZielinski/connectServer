@@ -17,6 +17,7 @@ class TrustedDevice
     private ?int $id = null;
 
     #[ORM\ManyToOne(inversedBy: 'trustedDevices')]
+    #[ORM\JoinColumn(onDelete: 'CASCADE')]
     private ?User $user = null;
 
     #[ORM\Column(length: 255)]

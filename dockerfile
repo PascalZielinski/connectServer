@@ -16,5 +16,6 @@ RUN apt-get update && apt-get install -y \
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 RUN printf 'file_uploads = On\nupload_max_filesize = 256M\npost_max_size = 257M\nmax_file_uploads = 1\n' \
     > /usr/local/etc/php/conf.d/uploads.ini
+RUN printf 'date.timezone = UTC\n' > /usr/local/etc/php/conf.d/timezone.ini
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer

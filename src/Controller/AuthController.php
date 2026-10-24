@@ -21,16 +21,7 @@ final class AuthController extends AbstractController
     #[Route('/api/register', name: 'api_register', methods: ['POST'])]
     public function register(Request $request, AuthService $authService): JsonResponse
     {
-        $authService->registerRequest(
-            $request->toArray(),
-            $this->deviceSecret($request),
-            $request->headers->get('User-Agent'),
-        );
-
-        return $this->json(
-            ['message' => 'If this address can be registered, we have sent you an email.'],
-            Response::HTTP_ACCEPTED,
-        );
+        return $this->response($authService->registerRequest($request->toArray()));
     }
 
     #[Route('/api/login', name: 'api_login', methods: ['POST'])]
@@ -97,32 +88,48 @@ final class AuthController extends AbstractController
         return $secret;
     }
 
-        #[Route('/api/verify-email', name: 'app_verify_email', methods: ['GET'])]
-        public function verify(
-            Request $request,
-            UserRepository $users,
-            VerifyEmailHelperInterface $helper,
-            EntityManagerInterface $em,
-        ): JsonResponse {
-            $user = $users->find((int) $request->query->get('id'));
+    #[Route('/api/verify-email', name: 'app_verify_email', methods: ['GET'])]
+    public function verify(
+        Request $request,
+        UserRepository $users,
+        VerifyEmailHelperInterface $helper,
+        EntityManagerInterface $em,
+    ): JsonResponse {
+        $invalid = static fn (): JsonResponse => new JsonResponse(
+            ['message' => 'Invalid or expired link.'],
+            Response::HTTP_BAD_REQUEST,
+        );
 
-            if ($user === null) {
-                return new JsonResponse(['message' => 'Invalid link.'], Response::HTTP_BAD_REQUEST);
-            }
+        $user = $users->findOneBy(['uuid' => $request->query->getString('uuid')]);
 
-            try {
-                $helper->validateEmailConfirmationFromRequest(
-                    $request,
-                    (string) $user->getId(),
-                    $user->getEmail(),
-                );
-            } catch (VerifyEmailExceptionInterface) {
-                return new JsonResponse(['message' => 'Invalid or expired link.'], Response::HTTP_BAD_REQUEST);
-            }
-
-            $user->setVerified(true);
-            $em->flush();
-
-            return new JsonResponse(['message' => 'Email verified.']);
+        if ($user === null) {
+            return $invalid();
         }
+
+        try {
+            $helper->validateEmailConfirmationFromRequest(
+                $request,
+                $user->getUuid(),
+                $user->getEmail(),
+            );
+        } catch (VerifyEmailExceptionInterface) {
+            return $invalid();
+        }
+
+        $user->setIsVerified(true);
+        $user->setIsVerifiedExpiresAt(null);
+        $em->flush();
+
+        return new JsonResponse(['message' => 'Email verified.']);
+    }
+
+    #[Route('/api/token/refresh', name: 'api_token_refresh', methods: ['POST'])]
+    public function refresh(Request $request, AuthService $authService): JsonResponse
+    {
+        return $this->response($authService->refreshRequest(
+            $request->toArray(),
+            $this->deviceSecret($request),
+            $request->headers->get('User-Agent'),
+        ));
+    }
 }

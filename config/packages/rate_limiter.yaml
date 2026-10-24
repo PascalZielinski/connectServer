@@ -81,3 +81,6 @@ framework:
             policy: 'sliding_window'
             limit: 3
             interval: '24 hours'
+
+symfonycasts_verify_email:
+    lifetime: 1800

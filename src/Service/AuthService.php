@@ -39,7 +39,7 @@ final readonly class AuthService
     ) {
     }
 
-    public function registerRequest(array $data, string $deviceSecret, ?string $userAgent = null): OperationResult
+    public function registerRequest(array $data): OperationResult
     {
         $fields = $this->stringFields($data, 'email', 'password', 'password_confirm');
         if ($fields === null) {
@@ -51,9 +51,12 @@ final readonly class AuthService
 
         [$email, $password, $passwordConfirm] = $fields;
 
-        $user = $this->register($email, $password, $passwordConfirm);
+        $this->register($email, $password, $passwordConfirm);
 
-        return $this->tokensOrDeviceVerification($user, $deviceSecret, $userAgent, pendingStatus: 201);
+        return new OperationResult(
+            ['message' => 'If this address can be registered, we have sent you an email.'],
+            202,
+        );
     }
 
     public function loginRequest(array $data, string $deviceSecret, ?string $userAgent = null): OperationResult
@@ -63,6 +66,13 @@ final readonly class AuthService
         }
 
         $user = $this->authenticate($data['email'], $data['password']);
+
+        if (!$user->isVerified()) {
+            return new OperationResult([
+                'status' => 'email_verification_required',
+                'message' => 'Please verify your email address before logging in.',
+            ], 403);
+        }
 
         if (!$this->trustedDeviceService->isTrusted($user, $deviceSecret, $userAgent)) {
             return new OperationResult([
@@ -87,7 +97,7 @@ final readonly class AuthService
         string $email,
         string $password,
         string $passwordConfirm
-    ): ?User {
+    ): void {
         if (!hash_equals($password, $passwordConfirm)) {
             $this->throwUnprocessable([
                 'password_confirm' => ['Passwords do not match.'],
@@ -107,28 +117,30 @@ final readonly class AuthService
         );
         $user->eraseCredentials();
 
-        if ($this->users->findOneBy(['email' => $email]) !== null) {
-            $this->dispatcher->dispatch(
-                new ExistingAccountRegistrationEvent($email)
-            );
+        $existing = $this->users->findOneBy(['email' => $email]);
 
-            return null;
+        if ($existing !== null && $existing->isVerified()) {
+            $this->dispatcher->dispatch(new ExistingAccountRegistrationEvent($email));
+
+            return;
         }
 
         try {
-            $this->entityManager->persist($user);
-            $this->entityManager->flush();
+            $this->entityManager->wrapInTransaction(function () use ($existing, $user): void {
+                if ($existing !== null) {
+                    $this->entityManager->remove($existing);
+                    $this->entityManager->flush(); // vor persist wegen Unique-Constraint auf email
+                }
+                $this->entityManager->persist($user);
+                $this->entityManager->flush();
+            });
         } catch (UniqueConstraintViolationException) {
-            $this->dispatcher->dispatch(
-                new ExistingAccountRegistrationEvent($email)
-            );
+            $this->dispatcher->dispatch(new ExistingAccountRegistrationEvent($email));
 
-            return null;
+            return;
         }
 
         $this->dispatcher->dispatch(new UserRegisteredEvent($user));
-
-        return $user;
     }
 
     private function authenticate(string $email, string $password): User
@@ -143,22 +155,6 @@ final readonly class AuthService
         }
 
         return $user;
-    }
-
-    private function tokensOrDeviceVerification(
-        User $user,
-        string $deviceSecret,
-        ?string $userAgent,
-        int $pendingStatus,
-    ): OperationResult {
-        if (!$this->trustedDeviceService->isTrusted($user, $deviceSecret, $userAgent)) {
-            return new OperationResult([
-                'status' => 'device_verification_required',
-                'message' => 'Please confirm this device via the email we sent you.',
-            ], $pendingStatus);
-        }
-
-        return new OperationResult($this->issueTokens($user));
     }
 
     private function issueTokens(User $user): array
@@ -177,7 +173,6 @@ final readonly class AuthService
     private function userPayload(User $user): array
     {
         return [
-            'id' => $user->getId(),
             'uuid' => $user->getUuid(),
             'email' => $user->getEmail(),
             'created_at' => $user->getCreatedAt()->format(\DateTimeInterface::ATOM),
@@ -215,5 +210,32 @@ final readonly class AuthService
         }
 
         return $values;
+    }
+
+    public function refreshRequest(array $data, string $deviceSecret, ?string $userAgent = null): OperationResult
+    {
+        if (!isset($data['refresh_token']) || !is_string($data['refresh_token'])) {
+            return new OperationResult(['error' => 'refresh_token is required.'], 400);
+        }
+
+        $token = $this->refreshTokenManager->get($data['refresh_token']);
+
+        if ($token === null || !$token->isValid()) {
+            throw new UnauthorizedHttpException('Bearer', 'Invalid refresh token.');
+        }
+
+        $user = $this->users->findOneBy(['email' => $token->getUsername()]);
+
+        if (
+            $user === null
+            || !$user->isVerified()
+            || !$this->trustedDeviceService->isTrusted($user, $deviceSecret, $userAgent)
+        ) {
+            throw new UnauthorizedHttpException('Bearer', 'Invalid refresh token.');
+        }
+
+        $this->refreshTokenManager->delete($token);
+
+        return new OperationResult($this->issueTokens($user));
     }
 }
