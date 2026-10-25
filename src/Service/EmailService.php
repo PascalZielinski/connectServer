@@ -8,6 +8,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use SymfonyCasts\Bundle\VerifyEmail\VerifyEmailHelperInterface;
+use App\Entity\TrustedDevice;
 
 final class EmailService
 {
@@ -19,6 +20,7 @@ final class EmailService
         #[Autowire(service: 'limiter.mail_account_exists_daily')] private RateLimiterFactory $accountExistsDailyLimiter,
         #[Autowire(service: 'limiter.login_confirm_mail')] private RateLimiterFactory $loginConfirmLimiter,
         #[Autowire(service: 'limiter.login_confirm_mail_daily')] private RateLimiterFactory $loginConfirmDailyLimiter,
+        #[Autowire('%env(FRONTEND_URL)%')] private string $frontendUrl,
     ) {}
 
     public function sendVerificationMail(User $user): void
@@ -63,7 +65,7 @@ final class EmailService
         ));
     }
 
-    public function sendLoginConfirmationMail(User $user): void
+    public function sendLoginConfirmationMail(User $user, TrustedDevice $device, string $token): void
     {
         $key = (string) $user->getId();
 
@@ -76,9 +78,14 @@ final class EmailService
 
         $this->bus->dispatch(new SendEmailMessage(
             $user->getEmail(),
-            'Neues Gerät bestätigen',
+            'Warnung: Anmeldeversuch von unbekanntem Gerät',
             'email/login_confirm.html.twig',
-            // Kontext (Token/Link) hier ergänzen
+            [
+                'device' => $device->getDeviceName(),
+                'ip' => $device->getIp(),
+                'attemptAt' => $device->getAttemptAt()?->format('d.m.Y H:i') . ' UTC',
+                'link' => rtrim($this->frontendUrl, '/') . '/device/confirm?token=' . $token,
+            ],
         ));
     }
 

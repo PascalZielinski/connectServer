@@ -43,4 +43,16 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             ->getQuery()
             ->getResult();
     }
+
+    public function deleteExpiredUnverified(\DateTimeImmutable $now): int
+    {
+        return $this->createQueryBuilder('u')
+            ->delete()
+            ->where('u.isVerified = false')
+            ->andWhere('u.IsVerifiedExpiresAt IS NOT NULL')
+            ->andWhere('u.IsVerifiedExpiresAt < :now')
+            ->setParameter('now', $now)
+            ->getQuery()
+            ->execute();
+    }
 }

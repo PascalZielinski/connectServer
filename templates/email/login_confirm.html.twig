@@ -1,0 +1,15 @@
+<h2>Anmeldeversuch von unbekanntem Gerät</h2>
+
+<p>Es gab einen Anmeldeversuch auf dein Konto:</p>
+
+<ul>
+    <li><strong>Gerät:</strong> {{ device }}</li>
+    <li><strong>IP:</strong> {{ ip }}</li>
+    <li><strong>Zeitpunkt:</strong> {{ attemptAt }}</li>
+</ul>
+
+<p>Warst du das? Dann bestätige das Gerät (Link 15 Minuten gültig):</p>
+<p><a href="{{ link }}">Gerät bestätigen</a></p>
+
+<p>Warst du das nicht? Ignoriere diese Mail und ändere sofort dein Passwort.
+Ohne deine Bestätigung bleibt der Login blockiert.</p>

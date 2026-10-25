@@ -30,6 +30,18 @@ class TrustedDeviceRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function deleteStalePending(\DateTimeImmutable $before): int
+    {
+        return $this->createQueryBuilder('d')
+            ->delete()
+            ->where('d.confirmedAt IS NULL')
+            ->andWhere('d.confirmationTokenExpiresAt IS NOT NULL')
+            ->andWhere('d.confirmationTokenExpiresAt < :before')
+            ->setParameter('before', $before)
+            ->getQuery()
+            ->execute();
+    }
+
 //    /**
 //     * @return TrustedDevice[] Returns an array of TrustedDevice objects
 //     */

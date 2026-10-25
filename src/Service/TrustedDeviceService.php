@@ -4,15 +4,13 @@ namespace App\Service;
 
 use App\Entity\TrustedDevice;
 use App\Entity\User;
+use App\Event\DeviceChallengeStartedEvent;
 use App\Repository\TrustedDeviceRepository;
-use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Component\Mailer\MailerInterface;
-use Symfony\Component\Mime\Email;
-use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 final readonly class TrustedDeviceService
 {
@@ -23,12 +21,8 @@ final readonly class TrustedDeviceService
         private TrustedDeviceRepository $devices,
         private EntityManagerInterface $entityManager,
         private ManagerRegistry $registry,
-        private MailerInterface $mailer,
+        private EventDispatcherInterface $dispatcher,
         private LoggerInterface $logger,
-        #[Autowire('%env(MAILER_FROM)%')]
-        private string $mailFrom,
-        #[Autowire('%env(FRONTEND_URL)%')]
-        private string $frontendUrl,
     ) {
     }
 
@@ -121,39 +115,11 @@ final readonly class TrustedDeviceService
             $this->entityManager->flush();
         } catch (UniqueConstraintViolationException) {
             $this->registry->resetManager();
+            $this->logger->info('Parallel device challenge, skipping duplicate.');
 
             return;
         }
 
-        try {
-            $this->sendWarningMail($user, $device, $token);
-        } catch (TransportExceptionInterface $e) {
-            $this->logger->error('Device confirmation mail failed.', ['exception' => $e]);
-        }
-    }
-
-    private function sendWarningMail(User $user, TrustedDevice $device, string $token): void
-    {
-        $link = rtrim($this->frontendUrl, '/') . '/device/confirm?token=' . $token;
-
-        $email = (new Email())
-            ->from($this->mailFrom)
-            ->to($user->getEmail())
-            ->subject('Warnung: Anmeldeversuch von unbekanntem Gerät')
-            ->text(sprintf(
-                "Es gab einen Anmeldeversuch auf dein Konto:\n\n"
-                . "Gerät: %s\n"
-                . "IP: %s\n"
-                . "Zeitpunkt: %s UTC\n\n"
-                . "Warst du das? Dann bestätige das Gerät (Link 15 Minuten gültig):\n%s\n\n"
-                . "Warst du das nicht? Ignoriere diese Mail und ändere sofort dein Passwort. "
-                . "Ohne deine Bestätigung bleibt der Login blockiert.",
-                $device->getDeviceName(),
-                $device->getIp(),
-                $device->getAttemptAt()?->format('d.m.Y H:i'),
-                $link,
-            ));
-
-        $this->mailer->send($email);
+        $this->dispatcher->dispatch(new DeviceChallengeStartedEvent($user, $device, $token));
     }
 }

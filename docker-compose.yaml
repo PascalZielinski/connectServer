@@ -71,6 +71,22 @@ services:
         environment:
             MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-doctrine://default?auto_setup=0}
 
+    auth-cleanup-worker:
+        build:
+            context: .
+            dockerfile: dockerfile
+        working_dir: /var/www/html
+        user: www-data
+        command: ["php", "bin/console", "app:auth:cleanup"]
+        restart: unless-stopped
+        volumes:
+            - .:/var/www/html
+        depends_on:
+            migrate:
+                condition: service_completed_successfully
+        environment:
+            MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-doctrine://default?auto_setup=0}
+
     mail-worker:
         build:
             context: .
