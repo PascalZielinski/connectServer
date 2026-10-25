@@ -2,6 +2,7 @@
 
 namespace App\Service;
 
+use App\Entity\RefreshToken;
 use App\Entity\User;
 use App\Event\ExistingAccountRegistrationEvent;
 use App\Event\UserRegisteredEvent;
@@ -14,8 +15,8 @@ use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
-use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
+use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -31,11 +32,14 @@ final readonly class AuthService
         private RefreshTokenGeneratorInterface $refreshTokenGenerator,
         private RefreshTokenManagerInterface $refreshTokenManager,
         private TrustedDeviceService $trustedDeviceService,
+        private ManagerRegistry $registry,
         private EventDispatcherInterface $dispatcher,
         #[Autowire('%gesdinet_jwt_refresh_token.ttl%')]
         private int $refreshTokenTtl,
         #[Autowire('%env(AUTH_DUMMY_HASH)%')]
         private string $dummyHash,
+        #[Autowire('%lexik_jwt_authentication.token_ttl%')]
+        private int $accessTokenTtl,
     ) {
     }
 
@@ -59,8 +63,12 @@ final readonly class AuthService
         );
     }
 
-    public function loginRequest(array $data, string $deviceSecret, ?string $userAgent = null): OperationResult
-    {
+    public function loginRequest(
+        array $data,
+        string $deviceSecret,
+        string $ip,
+        ?string $userAgent = null,
+    ): OperationResult {
         if (!isset($data['email'], $data['password']) || !is_string($data['email']) || !is_string($data['password'])) {
             return new OperationResult(['error' => 'Email and password are required.'], 400);
         }
@@ -74,14 +82,18 @@ final readonly class AuthService
             ], 403);
         }
 
-        if (!$this->trustedDeviceService->isTrusted($user, $deviceSecret, $userAgent)) {
+        if (!$this->trustedDeviceService->isTrusted($user, $deviceSecret)) {
+            $this->trustedDeviceService->challenge($user, $deviceSecret, $ip, $userAgent);
+
             return new OperationResult([
                 'status' => 'device_verification_required',
                 'message' => 'Please confirm this device via the email we sent you.',
             ], 202);
         }
 
-        return new OperationResult($this->issueTokens($user));
+        $this->trustedDeviceService->recordLogin($user, $deviceSecret, $ip);
+
+        return new OperationResult($this->issueTokens($user, $deviceSecret));
     }
 
     public function currentUser(mixed $user): OperationResult
@@ -129,12 +141,13 @@ final readonly class AuthService
             $this->entityManager->wrapInTransaction(function () use ($existing, $user): void {
                 if ($existing !== null) {
                     $this->entityManager->remove($existing);
-                    $this->entityManager->flush(); // vor persist wegen Unique-Constraint auf email
+                    $this->entityManager->flush();
                 }
                 $this->entityManager->persist($user);
                 $this->entityManager->flush();
             });
         } catch (UniqueConstraintViolationException) {
+            $this->registry->resetManager();
             $this->dispatcher->dispatch(new ExistingAccountRegistrationEvent($email));
 
             return;
@@ -157,15 +170,21 @@ final readonly class AuthService
         return $user;
     }
 
-    private function issueTokens(User $user): array
+    private function issueTokens(User $user, string $deviceSecret): array
     {
         $refreshToken = $this->refreshTokenGenerator->createForUserWithTtl($user, $this->refreshTokenTtl);
+
+        if (!$refreshToken instanceof RefreshToken) {
+            throw new \LogicException('Refresh token class must be ' . RefreshToken::class);
+        }
+
+        $refreshToken->setDeviceHash(hash('sha256', $deviceSecret));
         $this->refreshTokenManager->save($refreshToken);
 
         return [
             'token' => $this->jwtManager->create($user),
             'refresh_token' => $refreshToken->getRefreshToken(),
-            'expires_in' => 3600,
+            'expires_in' => $this->accessTokenTtl,
             'user' => $this->userPayload($user),
         ];
     }
@@ -212,7 +231,7 @@ final readonly class AuthService
         return $values;
     }
 
-    public function refreshRequest(array $data, string $deviceSecret, ?string $userAgent = null): OperationResult
+    public function refreshRequest(array $data, string $deviceSecret): OperationResult
     {
         if (!isset($data['refresh_token']) || !is_string($data['refresh_token'])) {
             return new OperationResult(['error' => 'refresh_token is required.'], 400);
@@ -220,7 +239,11 @@ final readonly class AuthService
 
         $token = $this->refreshTokenManager->get($data['refresh_token']);
 
-        if ($token === null || !$token->isValid()) {
+        if (
+            !$token instanceof RefreshToken
+            || !$token->isValid()
+            || !hash_equals((string) $token->getDeviceHash(), hash('sha256', $deviceSecret))
+        ) {
             throw new UnauthorizedHttpException('Bearer', 'Invalid refresh token.');
         }
 
@@ -229,13 +252,63 @@ final readonly class AuthService
         if (
             $user === null
             || !$user->isVerified()
-            || !$this->trustedDeviceService->isTrusted($user, $deviceSecret, $userAgent)
+            || !$this->trustedDeviceService->isTrusted($user, $deviceSecret)
         ) {
             throw new UnauthorizedHttpException('Bearer', 'Invalid refresh token.');
         }
 
-        $this->refreshTokenManager->delete($token);
+        $tokens = $this->entityManager->wrapInTransaction(
+            function () use ($token, $user, $deviceSecret): array {
+                if (!$this->consumeRefreshToken($token)) {
+                    throw new UnauthorizedHttpException('Bearer', 'Invalid refresh token.');
+                }
 
-        return new OperationResult($this->issueTokens($user));
+                return $this->issueTokens($user, $deviceSecret);
+            }
+        );
+
+        return new OperationResult($tokens);
+    }
+
+    private function consumeRefreshToken(RefreshToken $token): bool
+    {
+        $deleted = $this->entityManager
+            ->createQuery('DELETE FROM ' . RefreshToken::class . ' t WHERE t.id = :id')
+            ->setParameter('id', $token->getId())
+            ->execute();
+
+        return $deleted === 1;
+    }
+
+    public function logoutRequest(array $data): OperationResult
+    {
+        if (!isset($data['refresh_token']) || !is_string($data['refresh_token'])) {
+            return new OperationResult(['error' => 'refresh_token is required.'], 400);
+        }
+
+        $token = $this->refreshTokenManager->get($data['refresh_token']);
+
+        if ($token instanceof RefreshToken) {
+            $this->consumeRefreshToken($token);
+        }
+
+        return new OperationResult([], 204);
+    }
+
+    public function revokeAllTokens(User $user): void
+    {
+        $this->entityManager
+            ->createQuery('DELETE FROM ' . RefreshToken::class . ' t WHERE t.username = :u')
+            ->setParameter('u', $user->getUserIdentifier())
+            ->execute();
+    }
+
+    public function revokeDevice(User $user, string $deviceSecretHash): void
+    {
+        $this->entityManager
+            ->createQuery('DELETE FROM ' . RefreshToken::class . ' t WHERE t.username = :u AND t.deviceHash = :h')
+            ->setParameter('u', $user->getUserIdentifier())
+            ->setParameter('h', $deviceSecretHash)
+            ->execute();
     }
 }

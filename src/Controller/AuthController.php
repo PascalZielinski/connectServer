@@ -30,6 +30,7 @@ final class AuthController extends AbstractController
         return $this->response($authService->loginRequest(
             $request->toArray(),
             $this->deviceSecret($request),
+            $request->getClientIp() ?? 'unknown',
             $request->headers->get('User-Agent'),
         ));
     }
@@ -88,39 +89,44 @@ final class AuthController extends AbstractController
         return $secret;
     }
 
-    #[Route('/api/verify-email', name: 'app_verify_email', methods: ['GET'])]
+    #[Route('/api/verify-email', name: 'app_verify_email', methods: ['GET', 'POST'])]
     public function verify(
         Request $request,
         UserRepository $users,
         VerifyEmailHelperInterface $helper,
         EntityManagerInterface $em,
-    ): JsonResponse {
-        $invalid = static fn (): JsonResponse => new JsonResponse(
-            ['message' => 'Invalid or expired link.'],
-            Response::HTTP_BAD_REQUEST,
-        );
-
+    ): Response {
         $user = $users->findOneBy(['uuid' => $request->query->getString('uuid')]);
 
-        if ($user === null) {
-            return $invalid();
-        }
-
         try {
+            if ($user === null) {
+                throw new BadRequestHttpException();
+            }
+
             $helper->validateEmailConfirmationFromRequest(
                 $request,
                 $user->getUuid(),
                 $user->getEmail(),
             );
-        } catch (VerifyEmailExceptionInterface) {
-            return $invalid();
+        } catch (VerifyEmailExceptionInterface | BadRequestHttpException) {
+            return $this->harden($this->render(
+                'email/verify_result.html.twig',
+                ['success' => false],
+                new Response(status: Response::HTTP_BAD_REQUEST),
+            ));
+        }
+
+        if (!$request->isMethod('POST')) {
+            return $this->harden($this->render('email/verify_form.html.twig', [
+                'action' => $request->getRequestUri(),
+            ]));
         }
 
         $user->setIsVerified(true);
         $user->setIsVerifiedExpiresAt(null);
         $em->flush();
 
-        return new JsonResponse(['message' => 'Email verified.']);
+        return $this->harden($this->render('email/verify_result.html.twig', ['success' => true]));
     }
 
     #[Route('/api/token/refresh', name: 'api_token_refresh', methods: ['POST'])]
@@ -129,7 +135,12 @@ final class AuthController extends AbstractController
         return $this->response($authService->refreshRequest(
             $request->toArray(),
             $this->deviceSecret($request),
-            $request->headers->get('User-Agent'),
         ));
+    }
+
+    #[Route('/api/logout', name: 'api_logout', methods: ['POST'])]
+    public function logout(Request $request, AuthService $authService): JsonResponse
+    {
+        return $this->response($authService->logoutRequest($request->toArray()));
     }
 }

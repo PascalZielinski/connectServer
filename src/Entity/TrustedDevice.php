@@ -47,6 +47,12 @@ class TrustedDevice
     #[ORM\Column(nullable: true)]
     private ?\DateTimeImmutable $expiresAt = null;
 
+    #[ORM\Column(length: 255)]
+    private ?string $ip = null;
+
+    #[ORM\Column]
+    private ?\DateTimeImmutable $attemptAt = null;
+
     public function __construct()
     {
         $this->deviceUuid = Uuid::v4();
@@ -124,4 +130,28 @@ class TrustedDevice
 
     public function getExpiresAt(): ?\DateTimeImmutable { return $this->expiresAt; }
     public function setExpiresAt(?\DateTimeImmutable $expiresAt): static { $this->expiresAt = $expiresAt; return $this; }
+
+    public function getIp(): ?string
+    {
+        return $this->ip;
+    }
+
+    public function setIp(string $ip): static
+    {
+        $this->ip = $ip;
+
+        return $this;
+    }
+
+    public function getAttemptAt(): ?\DateTimeImmutable
+    {
+        return $this->attemptAt;
+    }
+
+    public function setAttemptAt(\DateTimeImmutable $attemptAt): static
+    {
+        $this->attemptAt = $attemptAt;
+
+        return $this;
+    }
 }

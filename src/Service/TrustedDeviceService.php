@@ -10,6 +10,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\Persistence\ManagerRegistry;
 use Psr\Log\LoggerInterface;
 
 final readonly class TrustedDeviceService
@@ -20,6 +22,7 @@ final readonly class TrustedDeviceService
     public function __construct(
         private TrustedDeviceRepository $devices,
         private EntityManagerInterface $entityManager,
+        private ManagerRegistry $registry,
         private MailerInterface $mailer,
         private LoggerInterface $logger,
         #[Autowire('%env(MAILER_FROM)%')]
@@ -29,52 +32,15 @@ final readonly class TrustedDeviceService
     ) {
     }
 
-    public function isTrusted(User $user, string $deviceSecret, ?string $userAgent = null): bool
+    public function isTrusted(User $user, string $deviceSecret): bool
     {
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $hash = hash('sha256', $deviceSecret);
-        $device = $this->devices->findOneBy(['user' => $user, 'deviceSecretHash' => $hash]);
+        $device = $this->devices->findOneBy([
+            'user' => $user,
+            'deviceSecretHash' => hash('sha256', $deviceSecret),
+        ]);
 
-        if ($device !== null) {
-
-            if ($device->isTrusted($now)) {
-                $device->setLastLoginAt($now);
-                $this->entityManager->flush();
-
-                return true;
-            }
-
-            if ($device->isPending() && !$device->isConfirmationTokenExpired($now)) {
-                return false;
-            }
-
-        }
-
-        if ($this->devices->countPendingSince($user, $now->modify('-1 hour')) >= 3) {
-            return false;
-        }
-
-        $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $userAgent ?? '') ?: 'Unbekanntes Gerät';
-
-        $device ??= (new TrustedDevice())
-            ->setUser($user)
-            ->setDeviceSecretHash($hash);
-
-        $device->setDeviceName(mb_substr($name, 0, 255));
-
-        $token = bin2hex(random_bytes(32));
-        $device->startConfirmation(hash('sha256', $token), $now->modify(self::CONFIRMATION_TTL));
-
-        $this->entityManager->persist($device);
-        $this->entityManager->flush();
-
-        try {
-            $this->sendWarningMail($user, $device, $token);
-        } catch (TransportExceptionInterface $e) {
-            $this->logger->error('Device confirmation mail failed.', ['exception' => $e]);
-        }
-
-        return false;
+        return $device !== null && $device->isTrusted($now);
     }
 
     public function confirm(string $token): bool
@@ -92,6 +58,80 @@ final readonly class TrustedDeviceService
         return true;
     }
 
+    public function recordLogin(User $user, string $deviceSecret, string $ip): void
+    {
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $device = $this->devices->findOneBy([
+            'user' => $user,
+            'deviceSecretHash' => hash('sha256', $deviceSecret),
+        ]);
+
+        if ($device === null || !$device->isTrusted($now)) {
+            return;
+        }
+
+        $device->setIp($ip)->setAttemptAt($now)->setLastLoginAt($now);
+        $this->entityManager->flush();
+    }
+
+    public function challenge(User $user, string $deviceSecret, string $ip, ?string $userAgent = null): void
+    {
+        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        $hash = hash('sha256', $deviceSecret);
+        $device = $this->devices->findOneBy(['user' => $user, 'deviceSecretHash' => $hash]);
+
+        if ($device !== null) {
+            $device->setIp($ip)->setAttemptAt($now);
+
+            if ($device->isTrusted($now)) {
+                $this->entityManager->flush();
+
+                return;
+            }
+
+            if ($device->isPending() && !$device->isConfirmationTokenExpired($now)) {
+                $this->entityManager->flush();
+
+                return;
+            }
+        }
+
+        if ($this->devices->countPendingSince($user, $now->modify('-1 hour')) >= 3) {
+            if ($device !== null) {
+                $this->entityManager->flush();
+            }
+
+            return;
+        }
+
+        $device ??= (new TrustedDevice())
+            ->setUser($user)
+            ->setDeviceSecretHash($hash);
+
+        $device
+            ->setDeviceName(UserAgentParser::describe($userAgent))
+            ->setIp($ip)
+            ->setAttemptAt($now);
+
+        $token = bin2hex(random_bytes(32));
+        $device->startConfirmation(hash('sha256', $token), $now->modify(self::CONFIRMATION_TTL));
+
+        try {
+            $this->entityManager->persist($device);
+            $this->entityManager->flush();
+        } catch (UniqueConstraintViolationException) {
+            $this->registry->resetManager();
+
+            return;
+        }
+
+        try {
+            $this->sendWarningMail($user, $device, $token);
+        } catch (TransportExceptionInterface $e) {
+            $this->logger->error('Device confirmation mail failed.', ['exception' => $e]);
+        }
+    }
+
     private function sendWarningMail(User $user, TrustedDevice $device, string $token): void
     {
         $link = rtrim($this->frontendUrl, '/') . '/device/confirm?token=' . $token;
@@ -101,11 +141,16 @@ final readonly class TrustedDeviceService
             ->to($user->getEmail())
             ->subject('Warnung: Anmeldeversuch von unbekanntem Gerät')
             ->text(sprintf(
-                "Es gab einen Anmeldeversuch auf dein Konto von einem unbekannten Gerät:\n%s\n\n"
+                "Es gab einen Anmeldeversuch auf dein Konto:\n\n"
+                . "Gerät: %s\n"
+                . "IP: %s\n"
+                . "Zeitpunkt: %s UTC\n\n"
                 . "Warst du das? Dann bestätige das Gerät (Link 15 Minuten gültig):\n%s\n\n"
                 . "Warst du das nicht? Ignoriere diese Mail und ändere sofort dein Passwort. "
                 . "Ohne deine Bestätigung bleibt der Login blockiert.",
                 $device->getDeviceName(),
+                $device->getIp(),
+                $device->getAttemptAt()?->format('d.m.Y H:i'),
                 $link,
             ));
 

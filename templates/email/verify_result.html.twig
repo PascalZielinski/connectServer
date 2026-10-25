@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>E-Mail bestätigen</title>
+</head>
+<body>
+{% if success %}
+    <h1>E-Mail bestätigt</h1>
+    <p>Du kannst dich jetzt anmelden.</p>
+{% else %}
+    <h1>Link ungültig</h1>
+    <p>Der Link ist ungültig oder abgelaufen. Bitte registriere dich erneut.</p>
+{% endif %}
+</body>
+</html>
