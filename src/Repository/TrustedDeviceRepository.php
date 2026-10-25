@@ -21,7 +21,7 @@ class TrustedDeviceRepository extends ServiceEntityRepository
     {
         return (int) $this->createQueryBuilder('d')
             ->select('COUNT(d.id)')
-            ->andWhere('d.User = :user')
+            ->andwhere('d.user = :user')
             ->andWhere('d.createdAt >= :since')
             ->andWhere('d.confirmedAt IS NULL')
             ->setParameter('user', $user)

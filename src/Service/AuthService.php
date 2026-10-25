@@ -207,7 +207,13 @@ final readonly class AuthService
 
         $errors = [];
         foreach ($violations as $violation) {
-            $errors[$violation->getPropertyPath()][] = $violation->getMessage();
+            $path = $violation->getPropertyPath();
+
+            if ($path === 'plainPassword') {
+                $path = 'password';
+            }
+
+            $errors[$path][] = $violation->getMessage();
         }
 
         $this->throwUnprocessable($errors);

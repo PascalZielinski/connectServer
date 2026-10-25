@@ -37,7 +37,6 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     private string $email = '';
 
     #[ORM\Column]
-    #[Assert\Length(min: 8, max: 4096)]
     private string $password = '';
 
     #[ORM\Column]
@@ -53,7 +52,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     /**
      * @var Collection<int, TrustedDevice>
      */
-    #[ORM\OneToMany(targetEntity: TrustedDevice::class, mappedBy: 'User')]
+    #[ORM\OneToMany(targetEntity: TrustedDevice::class, mappedBy: 'user')]
     private Collection $trustedDevices;
 
     #[ORM\Column(options: ['default' => false])]

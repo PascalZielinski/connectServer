@@ -16,6 +16,9 @@ use Psr\Cache\CacheItemPoolInterface;
     name: 'app:ratelimit:cleanup',
     description: 'Remove all rate limits',
 )]
+
+# docker compose exec web php bin/console app:ratelimit:cleanup
+
 final class RateLimitCleanupCommand extends Command
 {
     public function __construct(
